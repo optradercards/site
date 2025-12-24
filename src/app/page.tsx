@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import Link from 'next/link';
 import { sampleCards } from '@/data/sampleCards';
 import { useCollection } from '@/hooks/useCollection';
 import { Card } from '@/types/card';
@@ -374,9 +375,9 @@ export default function Home() {
           <div className="flex justify-between items-center flex-wrap gap-4 text-sm md:text-base">
             <p className="text-center md:text-left w-full md:w-auto text-gray-300 dark:text-gray-400">&copy; 2025 OP Trader. All rights reserved. One Piece is a trademark of Eiichiro Oda/Shueisha.</p>
             <div className="flex gap-4 md:gap-8 mx-auto md:mx-0">
-              <a href="#privacy" className="hover:text-red-500 transition-colors">Privacy Policy</a>
-              <a href="#terms" className="hover:text-red-500 transition-colors">Terms of Service</a>
-              <a href="#contact" className="hover:text-red-500 transition-colors">Contact</a>
+              <Link href="/privacy-policy" className="hover:text-red-500 transition-colors">Privacy Policy</Link>
+              <Link href="/terms-of-service" className="hover:text-red-500 transition-colors">Terms of Service</Link>
+              <button onClick={() => scrollToSection('about')} className="hover:text-red-500 transition-colors">Contact</button>
             </div>
           </div>
         </div>
