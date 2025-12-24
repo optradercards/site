@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { sampleCards } from '@/data/sampleCards';
 import { useCollection } from '@/hooks/useCollection';
 import { Card } from '@/types/card';
@@ -11,8 +11,37 @@ export default function Home() {
   const [typeFilter, setTypeFilter] = useState('');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeSection, setActiveSection] = useState('home');
+  const [isDarkMode, setIsDarkMode] = useState(false);
 
   const { collection, addToCollection, isLoaded } = useCollection();
+
+  // Initialize theme from localStorage or system preference
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+    
+    setIsDarkMode(shouldBeDark);
+    if (shouldBeDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
+  // Toggle theme
+  const toggleTheme = () => {
+    const newIsDark = !isDarkMode;
+    setIsDarkMode(newIsDark);
+    
+    if (newIsDark) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
+  };
 
   // Filter marketplace cards
   const filteredCards = useMemo(() => {
@@ -82,29 +111,47 @@ export default function Home() {
   return (
     <>
       {/* Header */}
-      <header className="bg-gray-800 text-white shadow-lg sticky top-0 z-50">
+      <header className="bg-gray-800 dark:bg-gray-950 text-white shadow-lg sticky top-0 z-50">
         <nav className="container mx-auto px-4 py-4">
           <div className="flex justify-between items-center flex-wrap gap-4">
             <div>
               <h1 className="text-3xl font-bold text-red-500">OP Trader</h1>
-              <p className="text-sm text-gray-300">One Piece TCG Marketplace</p>
+              <p className="text-sm text-gray-300 dark:text-gray-400">One Piece TCG Marketplace</p>
             </div>
-            <ul className="flex gap-4 md:gap-8 flex-wrap">
-              {['home', 'marketplace', 'collection', 'about'].map(section => (
-                <li key={section}>
-                  <button
-                    onClick={() => scrollToSection(section)}
-                    className={`font-medium transition-colors px-4 py-2 rounded capitalize ${
-                      activeSection === section
-                        ? 'text-red-500 bg-white bg-opacity-10'
-                        : 'text-white hover:text-red-500 hover:bg-white hover:bg-opacity-10'
-                    }`}
-                  >
-                    {section === 'collection' ? 'My Collection' : section}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <div className="flex items-center gap-4">
+              <ul className="flex gap-4 md:gap-8 flex-wrap">
+                {['home', 'marketplace', 'collection', 'about'].map(section => (
+                  <li key={section}>
+                    <button
+                      onClick={() => scrollToSection(section)}
+                      className={`font-medium transition-colors px-4 py-2 rounded capitalize ${
+                        activeSection === section
+                          ? 'text-red-500 bg-white bg-opacity-10'
+                          : 'text-white hover:text-red-500 hover:bg-white hover:bg-opacity-10'
+                      }`}
+                    >
+                      {section === 'collection' ? 'My Collection' : section}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {/* Theme Toggle Button */}
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg bg-white bg-opacity-10 hover:bg-opacity-20 transition-colors"
+                aria-label="Toggle theme"
+              >
+                {isDarkMode ? (
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </nav>
       </header>
@@ -135,9 +182,9 @@ export default function Home() {
         </section>
 
         {/* Marketplace Section */}
-        <section id="marketplace" className="bg-white py-12 min-h-screen">
+        <section id="marketplace" className="bg-white dark:bg-gray-900 py-12 min-h-screen">
           <div className="container mx-auto px-4">
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800">Marketplace</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800 dark:text-gray-100">Marketplace</h2>
             
             {/* Filters */}
             <div className="flex gap-4 mb-8 flex-wrap">
@@ -146,12 +193,12 @@ export default function Home() {
                 placeholder="Search cards..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="flex-1 min-w-[250px] px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                className="flex-1 min-w-[250px] px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               />
               <select
                 value={rarityFilter}
                 onChange={(e) => setRarityFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 min-w-[150px]"
+                className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 min-w-[150px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               >
                 <option value="">All Rarities</option>
                 <option value="Common">Common</option>
@@ -163,7 +210,7 @@ export default function Home() {
               <select
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
-                className="px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 min-w-[150px]"
+                className="px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 min-w-[150px] bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
               >
                 <option value="">All Types</option>
                 <option value="Character">Character</option>
@@ -175,7 +222,7 @@ export default function Home() {
 
             {/* Card Grid */}
             {filteredCards.length === 0 ? (
-              <div className="text-center py-16 text-gray-500">
+              <div className="text-center py-16 text-gray-500 dark:text-gray-400">
                 <h3 className="text-2xl font-semibold mb-2">No cards found</h3>
                 <p>Try adjusting your search or filters.</p>
               </div>
@@ -185,21 +232,21 @@ export default function Home() {
                   <div
                     key={card.id}
                     onClick={() => setSelectedCard(card)}
-                    className="bg-white rounded-lg shadow-lg overflow-hidden cursor-pointer transform transition-all hover:-translate-y-2 hover:shadow-xl"
+                    className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden cursor-pointer transform transition-all hover:-translate-y-2 hover:shadow-xl"
                   >
                     <div className="h-64 bg-gradient-to-br from-purple-400 to-purple-700 flex items-center justify-center text-white text-xl md:text-2xl font-bold p-4 text-center">
                       {card.name}
                     </div>
                     <div className="p-4">
-                      <div className="font-bold text-lg mb-2 text-gray-800">{card.name}</div>
-                      <div className="flex justify-between mb-2 text-sm text-gray-600 items-center">
+                      <div className="font-bold text-lg mb-2 text-gray-800 dark:text-gray-100">{card.name}</div>
+                      <div className="flex justify-between mb-2 text-sm text-gray-600 dark:text-gray-400 items-center">
                         <span className={`${getRarityClass(card.rarity)} px-3 py-1 rounded-full text-xs font-bold text-white`}>
                           {card.rarity}
                         </span>
                         <span>{card.type}</span>
                       </div>
                       {card.power && (
-                        <div className="text-sm text-gray-600 mb-2">Power: {card.power}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Power: {card.power}</div>
                       )}
                       <div className="text-xl md:text-2xl font-bold text-red-500 mb-3">${card.price.toFixed(2)}</div>
                       <div className="flex gap-2">
@@ -231,35 +278,35 @@ export default function Home() {
         </section>
 
         {/* Collection Section */}
-        <section id="collection" className="bg-gray-100 py-12 min-h-screen">
+        <section id="collection" className="bg-gray-100 dark:bg-gray-800 py-12 min-h-screen">
           <div className="container mx-auto px-4">
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800">My Collection</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800 dark:text-gray-100">My Collection</h2>
             
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-              <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+              <div className="bg-white dark:bg-gray-700 p-8 rounded-lg shadow-lg text-center">
                 <h3 className="text-3xl md:text-4xl font-bold text-red-500 mb-2">
                   {isLoaded ? collectionStats.totalCards : 0}
                 </h3>
-                <p className="text-gray-600 font-medium">Total Cards</p>
+                <p className="text-gray-600 dark:text-gray-300 font-medium">Total Cards</p>
               </div>
-              <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+              <div className="bg-white dark:bg-gray-700 p-8 rounded-lg shadow-lg text-center">
                 <h3 className="text-3xl md:text-4xl font-bold text-red-500 mb-2">
                   {isLoaded ? collectionStats.uniqueCards : 0}
                 </h3>
-                <p className="text-gray-600 font-medium">Unique Cards</p>
+                <p className="text-gray-600 dark:text-gray-300 font-medium">Unique Cards</p>
               </div>
-              <div className="bg-white p-8 rounded-lg shadow-lg text-center">
+              <div className="bg-white dark:bg-gray-700 p-8 rounded-lg shadow-lg text-center">
                 <h3 className="text-3xl md:text-4xl font-bold text-red-500 mb-2">
                   ${isLoaded ? collectionStats.collectionValue.toFixed(2) : '0.00'}
                 </h3>
-                <p className="text-gray-600 font-medium">Estimated Value</p>
+                <p className="text-gray-600 dark:text-gray-300 font-medium">Estimated Value</p>
               </div>
             </div>
 
             {/* Collection Cards */}
             {collectionCards.length === 0 ? (
-              <div className="text-center py-16 text-gray-500">
+              <div className="text-center py-16 text-gray-500 dark:text-gray-400">
                 <h3 className="text-2xl font-semibold mb-2">Your collection is empty</h3>
                 <p>Start adding cards from the marketplace!</p>
               </div>
@@ -269,23 +316,23 @@ export default function Home() {
                   <div
                     key={card.id}
                     onClick={() => setSelectedCard(card)}
-                    className="bg-white rounded-lg shadow-lg overflow-hidden cursor-pointer transform transition-all hover:-translate-y-2 hover:shadow-xl"
+                    className="bg-white dark:bg-gray-700 rounded-lg shadow-lg overflow-hidden cursor-pointer transform transition-all hover:-translate-y-2 hover:shadow-xl"
                   >
                     <div className="h-64 bg-gradient-to-br from-purple-400 to-purple-700 flex items-center justify-center text-white text-xl md:text-2xl font-bold p-4 text-center">
                       {card.name}
                     </div>
                     <div className="p-4">
-                      <div className="font-bold text-lg mb-2 text-gray-800">{card.name}</div>
-                      <div className="flex justify-between mb-2 text-sm text-gray-600 items-center">
+                      <div className="font-bold text-lg mb-2 text-gray-800 dark:text-gray-100">{card.name}</div>
+                      <div className="flex justify-between mb-2 text-sm text-gray-600 dark:text-gray-400 items-center">
                         <span className={`${getRarityClass(card.rarity)} px-3 py-1 rounded-full text-xs font-bold text-white`}>
                           {card.rarity}
                         </span>
                         <span>{card.type}</span>
                       </div>
                       {card.power && (
-                        <div className="text-sm text-gray-600 mb-2">Power: {card.power}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Power: {card.power}</div>
                       )}
-                      <div className="text-sm text-gray-600 mb-2">
+                      <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
                         <strong>Quantity:</strong> {card.quantity}
                       </div>
                       <div className="text-xl md:text-2xl font-bold text-red-500">${card.price.toFixed(2)}</div>
@@ -298,21 +345,21 @@ export default function Home() {
         </section>
 
         {/* About Section */}
-        <section id="about" className="bg-white py-12 min-h-screen">
+        <section id="about" className="bg-white dark:bg-gray-900 py-12 min-h-screen">
           <div className="container mx-auto px-4">
-            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800">About OP Trader</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-8 text-gray-800 dark:text-gray-100">About OP Trader</h2>
             <div className="max-w-3xl mx-auto">
-              <p className="text-base md:text-lg mb-6 text-gray-700 leading-relaxed">
+              <p className="text-base md:text-lg mb-6 text-gray-700 dark:text-gray-300 leading-relaxed">
                 OP Trader is a specialized marketplace for One Piece Trading Card Game collectors. We provide a platform where enthusiasts can:
               </p>
-              <ul className="list-disc list-inside mb-6 space-y-3 text-base md:text-lg text-gray-700">
+              <ul className="list-disc list-inside mb-6 space-y-3 text-base md:text-lg text-gray-700 dark:text-gray-300">
                 <li>Browse and discover cards from all sets</li>
                 <li>Buy and sell cards with other collectors</li>
                 <li>Trade cards to complete your collection</li>
                 <li>Track your collection&apos;s value and rarity</li>
                 <li>Connect with the One Piece TCG community</li>
               </ul>
-              <p className="text-base md:text-lg text-gray-700 leading-relaxed">
+              <p className="text-base md:text-lg text-gray-700 dark:text-gray-300 leading-relaxed">
                 Whether you&apos;re a seasoned collector or just starting your journey in the Grand Line, OP Trader is your trusted companion for all things One Piece TCG.
               </p>
             </div>
@@ -321,10 +368,10 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-gray-800 text-white py-8">
+      <footer className="bg-gray-800 dark:bg-gray-950 text-white py-8">
         <div className="container mx-auto px-4">
           <div className="flex justify-between items-center flex-wrap gap-4 text-sm md:text-base">
-            <p className="text-center md:text-left w-full md:w-auto">&copy; 2025 OP Trader. All rights reserved. One Piece is a trademark of Eiichiro Oda/Shueisha.</p>
+            <p className="text-center md:text-left w-full md:w-auto text-gray-300 dark:text-gray-400">&copy; 2025 OP Trader. All rights reserved. One Piece is a trademark of Eiichiro Oda/Shueisha.</p>
             <div className="flex gap-4 md:gap-8 mx-auto md:mx-0">
               <a href="#privacy" className="hover:text-red-500 transition-colors">Privacy Policy</a>
               <a href="#terms" className="hover:text-red-500 transition-colors">Terms of Service</a>
@@ -341,37 +388,37 @@ export default function Home() {
           onClick={() => setSelectedCard(null)}
         >
           <div
-            className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 md:p-8">
               <button
                 onClick={() => setSelectedCard(null)}
-                className="float-right text-3xl md:text-4xl text-gray-400 hover:text-black cursor-pointer leading-none"
+                className="float-right text-3xl md:text-4xl text-gray-400 hover:text-gray-800 dark:hover:text-gray-100 cursor-pointer leading-none"
               >
                 &times;
               </button>
               <div className="h-64 md:h-96 bg-gradient-to-br from-purple-400 to-purple-700 rounded-lg flex items-center justify-center text-white text-2xl md:text-3xl font-bold mb-6 p-8 text-center">
                 {selectedCard.name}
               </div>
-              <h3 className="text-2xl md:text-3xl font-bold mb-4 text-gray-800">{selectedCard.name}</h3>
-              <p className="mb-3 text-base md:text-lg"><strong>Type:</strong> {selectedCard.type}</p>
-              <p className="mb-3 text-base md:text-lg">
+              <h3 className="text-2xl md:text-3xl font-bold mb-4 text-gray-800 dark:text-gray-100">{selectedCard.name}</h3>
+              <p className="mb-3 text-base md:text-lg text-gray-700 dark:text-gray-300"><strong>Type:</strong> {selectedCard.type}</p>
+              <p className="mb-3 text-base md:text-lg text-gray-700 dark:text-gray-300">
                 <strong>Rarity:</strong>{' '}
                 <span className={`${getRarityClass(selectedCard.rarity)} px-3 py-1 rounded-full text-xs font-bold text-white`}>
                   {selectedCard.rarity}
                 </span>
               </p>
               {selectedCard.power && (
-                <p className="mb-3 text-base md:text-lg"><strong>Power:</strong> {selectedCard.power}</p>
+                <p className="mb-3 text-base md:text-lg text-gray-700 dark:text-gray-300"><strong>Power:</strong> {selectedCard.power}</p>
               )}
               {selectedCard.attribute && (
-                <p className="mb-3 text-base md:text-lg"><strong>Attribute:</strong> {selectedCard.attribute}</p>
+                <p className="mb-3 text-base md:text-lg text-gray-700 dark:text-gray-300"><strong>Attribute:</strong> {selectedCard.attribute}</p>
               )}
-              <p className="mb-3 text-base md:text-lg"><strong>Set:</strong> {selectedCard.set}</p>
-              <div className="bg-gray-100 p-4 rounded-lg my-6">
-                <p className="font-bold mb-2 text-base md:text-lg">Description:</p>
-                <p className="text-gray-700 text-sm md:text-base">{selectedCard.description}</p>
+              <p className="mb-3 text-base md:text-lg text-gray-700 dark:text-gray-300"><strong>Set:</strong> {selectedCard.set}</p>
+              <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg my-6">
+                <p className="font-bold mb-2 text-base md:text-lg text-gray-800 dark:text-gray-100">Description:</p>
+                <p className="text-gray-700 dark:text-gray-300 text-sm md:text-base">{selectedCard.description}</p>
               </div>
               <p className="text-2xl md:text-3xl font-bold text-red-500 mb-6">${selectedCard.price.toFixed(2)}</p>
               <div className="flex flex-col sm:flex-row gap-3">
