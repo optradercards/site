@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { sampleCards } from '@/data/sampleCards';
 import { useCollection } from '@/hooks/useCollection';
 import { Card } from '@/types/card';
@@ -11,20 +11,29 @@ export default function Home() {
   const [typeFilter, setTypeFilter] = useState('');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeSection, setActiveSection] = useState('home');
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    // Initialize from localStorage or system preference (only runs once on mount)
-    if (typeof window !== 'undefined') {
-      const savedTheme = localStorage.getItem('theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      return savedTheme === 'dark' || (!savedTheme && prefersDark);
-    }
-    return false;
-  });
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const initializedRef = useRef(false);
 
   const { collection, addToCollection, isLoaded } = useCollection();
 
-  // Apply dark mode class on mount and when isDarkMode changes
+  // Initialize theme on mount and sync with DOM
   useEffect(() => {
+    // Initialize theme preference on first mount only
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+      
+      if (shouldBeDark) {
+        document.documentElement.classList.add('dark');
+        // Use setTimeout to avoid setState in effect
+        setTimeout(() => setIsDarkMode(true), 0);
+      }
+      return;
+    }
+
+    // Sync DOM with state for subsequent changes
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
