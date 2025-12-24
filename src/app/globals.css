@@ -5,5 +5,10 @@ html {
 }
 
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-inter), system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .font-heading {
+  font-family: var(--font-bangers), cursive;
+  letter-spacing: 0.03em;
 }
