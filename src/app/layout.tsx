@@ -1,5 +1,17 @@
 import type { Metadata } from "next";
+import { Bangers, Inter } from "next/font/google";
 import "./globals.css";
+
+const bangers = Bangers({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-bangers",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
   title: "OP Trader - One Piece TCG Marketplace",
@@ -12,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${inter.variable} ${bangers.variable}`}>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -29,7 +41,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className="antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100">
+      <body className={`${inter.className} antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}>
         {children}
       </body>
     </html>
