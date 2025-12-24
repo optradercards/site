@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { sampleCards } from '@/data/sampleCards';
 import { useCollection } from '@/hooks/useCollection';
 import { Card } from '@/types/card';
@@ -12,45 +12,36 @@ export default function Home() {
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeSection, setActiveSection] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const initializedRef = useRef(false);
+  const [mounted, setMounted] = useState(false);
 
   const { collection, addToCollection, isLoaded } = useCollection();
 
-  // Initialize theme on mount and sync with DOM
+  // Mark as mounted and read initial theme from DOM
   useEffect(() => {
-    // Initialize theme preference on first mount only
-    if (!initializedRef.current) {
-      initializedRef.current = true;
-      const savedTheme = localStorage.getItem('theme');
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-      
-      if (shouldBeDark) {
-        document.documentElement.classList.add('dark');
-        // Use setTimeout to avoid setState in effect
-        setTimeout(() => setIsDarkMode(true), 0);
-      }
-      return;
+    setMounted(true);
+    // Read the theme that was set by the script in layout
+    const isDark = document.documentElement.classList.contains('dark');
+    if (isDark) {
+      setIsDarkMode(true);
     }
+  }, []);
 
-    // Sync DOM with state for subsequent changes
+  // Apply theme changes when isDarkMode changes (but not on mount)
+  useEffect(() => {
+    if (!mounted) return;
+    
     if (isDarkMode) {
       document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
     }
-  }, [isDarkMode]);
+  }, [isDarkMode, mounted]);
 
   // Toggle theme
   const toggleTheme = () => {
-    const newIsDark = !isDarkMode;
-    setIsDarkMode(newIsDark);
-    
-    if (newIsDark) {
-      localStorage.setItem('theme', 'dark');
-    } else {
-      localStorage.setItem('theme', 'light');
-    }
+    setIsDarkMode(!isDarkMode);
   };
 
   // Filter marketplace cards
