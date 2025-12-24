@@ -11,23 +11,26 @@ export default function Home() {
   const [typeFilter, setTypeFilter] = useState('');
   const [selectedCard, setSelectedCard] = useState<Card | null>(null);
   const [activeSection, setActiveSection] = useState('home');
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    // Initialize from localStorage or system preference (only runs once on mount)
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      return savedTheme === 'dark' || (!savedTheme && prefersDark);
+    }
+    return false;
+  });
 
   const { collection, addToCollection, isLoaded } = useCollection();
 
-  // Initialize theme from localStorage or system preference
+  // Apply dark mode class on mount and when isDarkMode changes
   useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-    
-    setIsDarkMode(shouldBeDark);
-    if (shouldBeDark) {
+    if (isDarkMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
-  }, []);
+  }, [isDarkMode]);
 
   // Toggle theme
   const toggleTheme = () => {
@@ -35,10 +38,8 @@ export default function Home() {
     setIsDarkMode(newIsDark);
     
     if (newIsDark) {
-      document.documentElement.classList.add('dark');
       localStorage.setItem('theme', 'dark');
     } else {
-      document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
   };
