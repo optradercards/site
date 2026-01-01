@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Bangers, Inter } from "next/font/google";
 import "./globals.css";
+import { createClient } from "@/lib/supabase/server";
+import { UserProvider } from "@/contexts/UserContext";
+import { Toaster } from "sonner";
 
 const bangers = Bangers({
   weight: "400",
@@ -18,13 +21,30 @@ export const metadata: Metadata = {
   description: "The premier marketplace for One Piece Trading Card Game collectors to buy, sell, and trade cards.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  let isAdmin = false;
+  if (user) {
+    try {
+      const { data, error } = await supabase.rpc('is_admin');
+      if (error) {
+        console.error('Error checking admin status:', error);
+      } else {
+        isAdmin = data === true;
+      }
+    } catch (error) {
+      console.error('Exception checking admin status:', error);
+    }
+  }
+
   return (
-    <html lang="en" className={`${inter.variable} ${bangers.variable}`}>
+    <html lang="en" className={`${inter.variable} ${bangers.variable}`} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -42,7 +62,10 @@ export default function RootLayout({
         />
       </head>
       <body className={`${inter.className} antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}>
-        {children}
+        <UserProvider user={user} isAdmin={isAdmin}>
+          {children}
+        <Toaster richColors position="top-right" />
+        </UserProvider>
       </body>
     </html>
   );

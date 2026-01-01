@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
-import { type AuthError, type Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase/client';
+import { type AuthError } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
+import { useUser } from '@/contexts/UserContext';
 
 type SignupFormData = {
   email: string;
@@ -13,43 +14,24 @@ type SignupFormData = {
 };
 
 export default function SignupClient() {
+  const supabase = createClient();
   const searchParams = useSearchParams();
+  const { user } = useUser();
   const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<SignupFormData>({
     defaultValues: {
       email: '',
       firstName: ''
     }
   });
-  const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-
     // Prefill email from query parameter if redirected from login
     const emailParam = searchParams.get('email');
     if (emailParam) {
       setValue('email', emailParam);
     }
-
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!isMounted) return;
-      if (error) {
-        setError(error.message);
-        return;
-      }
-      setSession(data.session ?? null);
-    });
-
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.subscription.unsubscribe();
-    };
   }, [searchParams, setValue]);
 
   const normalizeError = (err: AuthError | null) => {
@@ -107,11 +89,11 @@ export default function SignupClient() {
         <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">Sign Up</h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
-          {session ? (
+          {user ? (
             <>
               <div className="space-y-1">
                 <p className="text-gray-800 dark:text-gray-100 font-semibold">You&apos;re signed in.</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{session.user.email}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">{user.email}</p>
               </div>
 
               {error ? (

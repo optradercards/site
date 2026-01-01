@@ -1,27 +1,38 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useState } from 'react';
+import { subscribeToNewsletter } from '@/lib/newsletter';
 
 export default function SiteFooter() {
   const [email, setEmail] = useState('');
-  const [subscribed, setSubscribed] = useState(false);
-  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setMessage('');
+    setIsLoading(true);
 
     if (!email) {
-      setError('Please enter your email');
+      setMessage('Please enter your email');
+      setMessageType('error');
+      setIsLoading(false);
       return;
     }
 
-    // Here you would typically send to your backend/newsletter service
-    // For now, just show success
-    setSubscribed(true);
-    setEmail('');
-    setTimeout(() => setSubscribed(false), 3000);
+    const result = await subscribeToNewsletter(email);
+    setMessage(result.message);
+    setMessageType(result.success ? 'success' : 'error');
+
+    if (result.success) {
+      setEmail('');
+      setTimeout(() => setMessage(''), 4000);
+    }
+
+    setIsLoading(false);
   };
 
   return (
@@ -43,23 +54,50 @@ export default function SiteFooter() {
                   placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 px-4 py-2 rounded bg-gray-700 dark:bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2 rounded bg-gray-700 dark:bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded transition-colors"
+                  disabled={isLoading}
+                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Subscribe
+                  {isLoading ? 'Subscribing...' : 'Subscribe'}
                 </button>
               </div>
-              {error && <p className="text-sm text-red-400">{error}</p>}
-              {subscribed && <p className="text-sm text-green-400">Thanks for subscribing!</p>}
+              {message && (
+                <p className={`text-sm ${messageType === 'error' ? 'text-red-400' : 'text-green-400'}`}>
+                  {message}
+                </p>
+              )}
             </form>
           </div>
         </div>
 
         {/* Links Section */}
-        <div className="grid md:grid-cols-4 gap-8 mb-8">
+        <div className="grid md:grid-cols-4 gap-12 mb-8">
+          {/* Company Info */}
+          <div className="flex flex-col">
+            <Link href="/" className="inline-block mb-4 w-fit">
+              <Image
+                src="/logos/OP_Trader_FullLogo.png"
+                alt="OP Trader"
+                width={220}
+                height={44}
+                className="h-11 w-auto"
+              />
+            </Link>
+            <p className="text-gray-300 dark:text-gray-400 text-sm italic mb-6 flex-grow">
+              "Trade smart, earn better"
+            </p>
+            <Link
+              href="/login"
+              className="inline-block px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded transition-colors text-sm w-fit"
+            >
+              Sign In
+            </Link>
+          </div>
+
           {/* Product */}
           <div>
             <h4 className="font-semibold mb-4">Product</h4>
@@ -125,28 +163,11 @@ export default function SiteFooter() {
               </li>
             </ul>
           </div>
-
-          {/* Company */}
-          <div>
-            <h4 className="font-semibold mb-4">Company</h4>
-            <ul className="space-y-2 text-sm text-gray-300 dark:text-gray-400">
-              <li>
-                <a href="#blog" className="hover:text-white transition-colors">
-                  Blog
-                </a>
-              </li>
-              <li>
-                <a href="#careers" className="hover:text-white transition-colors">
-                  Careers
-                </a>
-              </li>
-            </ul>
-          </div>
         </div>
 
         {/* Bottom Section */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 border-t border-gray-700 dark:border-gray-800 text-sm text-gray-300 dark:text-gray-400">
-          <p>© {new Date().getFullYear()} OP Trader. All rights reserved.</p>
+          <p suppressHydrationWarning>© {new Date().getFullYear()} OP Trader. All rights reserved.</p>
           <div className="flex gap-6">
             <a href="#twitter" className="hover:text-white transition-colors">
               Twitter

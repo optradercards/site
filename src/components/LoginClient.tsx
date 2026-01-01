@@ -4,66 +4,45 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
-import { type AuthError, type Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase/client';
+import { type AuthError } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/client';
+import { useUser } from '@/contexts/UserContext';
 
 type LoginFormData = {
   email: string;
 };
 
 export default function LoginClient() {
+  const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { user } = useUser();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginFormData>({
     defaultValues: {
       email: ''
     }
   });
-  const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(() => {
-    // Initialize error from query string
+    // Initialize error from query string, unless it's an unauthorized error
+    const errorType = searchParams.get('error_type');
+    if (errorType === 'unauthorized') {
+      return 'You need admin access to view that page.';
+    }
     const errorParam = searchParams.get('error');
     return errorParam ? decodeURIComponent(errorParam) : null;
   });
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    let isMounted = true;
-
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!isMounted) return;
-      if (error) {
-        setError(error.message);
-        return;
+    // Handle redirect for already logged in users
+    if (user) {
+      const errorType = searchParams.get('error_type');
+      const returnUrl = searchParams.get('returnUrl');
+      if (returnUrl && errorType !== 'unauthorized') {
+        router.push(returnUrl);
       }
-      setSession(data.session ?? null);
-
-      // If user is already logged in and has a returnUrl, redirect to it
-      if (data.session) {
-        const returnUrl = searchParams.get('returnUrl');
-        if (returnUrl) {
-          router.push(returnUrl);
-        }
-      }
-    });
-
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      
-      // Redirect when user logs in if they have a returnUrl
-      if (newSession) {
-        const returnUrl = searchParams.get('returnUrl');
-        if (returnUrl) {
-          router.push(returnUrl);
-        }
-      }
-    });
-
-    return () => {
-      isMounted = false;
-      subscription.subscription.unsubscribe();
-    };
-  }, [searchParams, router]);
+    }
+  }, [user, searchParams, router]);
 
   const normalizeError = (err: AuthError | null) => {
     if (!err) return null;
@@ -129,11 +108,11 @@ export default function LoginClient() {
         <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">Sign In</h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
-          {session ? (
+          {user ? (
             <>
               <div className="space-y-1">
                 <p className="text-gray-800 dark:text-gray-100 font-semibold">You&apos;re signed in.</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{session.user.email}</p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">{user.email}</p>
               </div>
 
               {error ? (
