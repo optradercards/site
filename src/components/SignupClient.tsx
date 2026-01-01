@@ -1,27 +1,28 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useForm } from 'react-hook-form';
 import { type AuthError, type Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 
-type FormState = {
+type SignupFormData = {
   email: string;
   firstName: string;
 };
 
 export default function SignupClient() {
   const searchParams = useSearchParams();
-  const [form, setForm] = useState<FormState>({ email: '', firstName: '' });
+  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<SignupFormData>({
+    defaultValues: {
+      email: '',
+      firstName: ''
+    }
+  });
   const [session, setSession] = useState<Session | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-
-  const isValid = useMemo(() => {
-    return form.email.trim().length > 3 && form.firstName.trim().length > 0;
-  }, [form.email, form.firstName]);
 
   useEffect(() => {
     let isMounted = true;
@@ -29,7 +30,7 @@ export default function SignupClient() {
     // Prefill email from query parameter if redirected from login
     const emailParam = searchParams.get('email');
     if (emailParam) {
-      setForm((prev) => ({ ...prev, email: emailParam }));
+      setValue('email', emailParam);
     }
 
     supabase.auth.getSession().then(({ data, error }) => {
@@ -49,38 +50,27 @@ export default function SignupClient() {
       isMounted = false;
       subscription.subscription.unsubscribe();
     };
-  }, [searchParams]);
+  }, [searchParams, setValue]);
 
   const normalizeError = (err: AuthError | null) => {
     if (!err) return null;
     return err.message;
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: SignupFormData) => {
     setError(null);
     setMessage(null);
 
-    if (!isValid) {
-      if (!form.email.trim() || form.email.trim().length <= 3) {
-        setError('Please enter a valid email.');
-      } else if (!form.firstName.trim()) {
-        setError('Please enter your first name.');
-      }
-      return;
-    }
-
-    setIsSubmitting(true);
     try {
       const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
 
       const { error } = await supabase.auth.signInWithOtp({
-        email: form.email,
+        email: data.email,
         options: {
           emailRedirectTo: redirectTo,
           shouldCreateUser: true,
           data: {
-            first_name: form.firstName.trim(),
+            first_name: data.firstName.trim(),
           },
         },
       });
@@ -90,8 +80,8 @@ export default function SignupClient() {
       }
 
       setMessage('Check your email to finish creating your account.');
-    } finally {
-      setIsSubmitting(false);
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
     }
   };
 
@@ -153,7 +143,7 @@ export default function SignupClient() {
                 </Link>
               </p>
 
-              <form onSubmit={onSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200" htmlFor="firstName">
                     First name
@@ -162,12 +152,16 @@ export default function SignupClient() {
                     id="firstName"
                     type="text"
                     autoComplete="given-name"
-                    value={form.firstName}
-                    onChange={(e) => setForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    {...register('firstName', {
+                      required: 'First name is required',
+                      minLength: { value: 1, message: 'First name must not be empty' }
+                    })}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                     placeholder="Your first name"
-                    required
                   />
+                  {errors.firstName && (
+                    <p className="text-sm text-red-600 dark:text-red-400">{errors.firstName.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1">
@@ -179,12 +173,17 @@ export default function SignupClient() {
                     type="email"
                     inputMode="email"
                     autoComplete="email"
-                    value={form.email}
-                    onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
+                    {...register('email', {
+                      required: 'Email is required',
+                      minLength: { value: 4, message: 'Email must be at least 4 characters' },
+                      pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Please enter a valid email' }
+                    })}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                     placeholder="you@example.com"
-                    required
                   />
+                  {errors.email && (
+                    <p className="text-sm text-red-600 dark:text-red-400">{errors.email.message}</p>
+                  )}
                 </div>
 
                 {error ? (
