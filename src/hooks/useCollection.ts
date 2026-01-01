@@ -1,31 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { CollectionItem } from '@/types/card';
 
 export function useCollection() {
-  const [collection, setCollection] = useState<CollectionItem[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  useEffect(() => {
-    // Load collection from localStorage
-    const saved = localStorage.getItem('opTraderCollection');
-    if (saved) {
-      try {
-        setCollection(JSON.parse(saved));
-      } catch (error) {
-        console.error('Error loading collection:', error);
-      }
+  const [collection, setCollection] = useState<CollectionItem[]>(() => {
+    if (typeof window === 'undefined') return [];
+    const saved = window.localStorage.getItem('opTraderCollection');
+    if (!saved) return [];
+    try {
+      return JSON.parse(saved) as CollectionItem[];
+    } catch (error) {
+      console.error('Error loading collection:', error);
+      return [];
     }
-    setIsLoaded(true);
-  }, []);
+  });
 
   useEffect(() => {
     // Save collection to localStorage whenever it changes
-    if (isLoaded) {
-      localStorage.setItem('opTraderCollection', JSON.stringify(collection));
-    }
-  }, [collection, isLoaded]);
+    window.localStorage.setItem('opTraderCollection', JSON.stringify(collection));
+  }, [collection]);
 
   const addToCollection = (cardId: number) => {
     setCollection(prevCollection => {
@@ -52,6 +46,6 @@ export function useCollection() {
   return {
     collection,
     addToCollection,
-    isLoaded
+    isLoaded: true,
   };
 }

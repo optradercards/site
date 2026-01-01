@@ -40,12 +40,20 @@ export default function SiteHeader() {
               ))}
             </ul>
 
-            <Link
-              href="/login"
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
-            >
-              Login
-            </Link>
+            <div className="flex gap-2">
+              <Link
+                href="/login"
+                className="px-4 py-2 text-white hover:text-red-500 transition-colors font-medium"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/signup"
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
+              >
+                Sign Up
+              </Link>
+            </div>
           </div>
         </div>
       </nav>

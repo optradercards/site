@@ -12,3 +12,23 @@ h1, h2, h3, h4, h5, h6, .font-heading {
   font-family: var(--font-bangers), cursive;
   letter-spacing: 0.03em;
 }
+
+.rarity-common {
+  background-color: #95a5a6;
+}
+
+.rarity-uncommon {
+  background-color: #27ae60;
+}
+
+.rarity-rare {
+  background-color: #3498db;
+}
+
+.rarity-super-rare {
+  background-color: #9b59b6;
+}
+
+.rarity-secret-rare {
+  background-color: #f39c12;
+}

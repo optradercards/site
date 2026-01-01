@@ -2,28 +2,35 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { type AuthError, type Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase/client';
 
 type FormState = {
   email: string;
+  firstName: string;
 };
 
-export default function LoginPage() {
-  const router = useRouter();
-  const [form, setForm] = useState<FormState>({ email: '' });
+export default function SignupClient() {
+  const searchParams = useSearchParams();
+  const [form, setForm] = useState<FormState>({ email: '', firstName: '' });
   const [session, setSession] = useState<Session | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const isValid = useMemo(() => {
-    return form.email.trim().length > 3;
-  }, [form.email]);
+    return form.email.trim().length > 3 && form.firstName.trim().length > 0;
+  }, [form.email, form.firstName]);
 
   useEffect(() => {
     let isMounted = true;
+
+    // Prefill email from query parameter if redirected from login
+    const emailParam = searchParams.get('email');
+    if (emailParam) {
+      setForm((prev) => ({ ...prev, email: emailParam }));
+    }
 
     supabase.auth.getSession().then(({ data, error }) => {
       if (!isMounted) return;
@@ -42,7 +49,7 @@ export default function LoginPage() {
       isMounted = false;
       subscription.subscription.unsubscribe();
     };
-  }, []);
+  }, [searchParams]);
 
   const normalizeError = (err: AuthError | null) => {
     if (!err) return null;
@@ -55,7 +62,11 @@ export default function LoginPage() {
     setMessage(null);
 
     if (!isValid) {
-      setError('Please enter a valid email.');
+      if (!form.email.trim() || form.email.trim().length <= 3) {
+        setError('Please enter a valid email.');
+      } else if (!form.firstName.trim()) {
+        setError('Please enter your first name.');
+      }
       return;
     }
 
@@ -67,27 +78,18 @@ export default function LoginPage() {
         email: form.email,
         options: {
           emailRedirectTo: redirectTo,
-          shouldCreateUser: false, // Only sign in, don't create user
+          shouldCreateUser: true,
+          data: {
+            first_name: form.firstName.trim(),
+          },
         },
       });
       if (error) {
-        // Check if error indicates user doesn't exist
-        const errorMessage = error.message.toLowerCase();
-        if (
-          errorMessage.includes('user not found') ||
-          errorMessage.includes('email not confirmed') ||
-          errorMessage.includes('invalid login credentials') ||
-          errorMessage.includes('user does not exist')
-        ) {
-          // Redirect to signup page
-          router.push(`/signup?email=${encodeURIComponent(form.email)}`);
-          return;
-        }
         setError(normalizeError(error));
         return;
       }
 
-      setMessage('Check your email for a sign-in link.');
+      setMessage('Check your email to finish creating your account.');
     } finally {
       setIsSubmitting(false);
     }
@@ -112,7 +114,7 @@ export default function LoginPage() {
             Back to Home
           </Link>
         </div>
-        <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">Sign In</h1>
+        <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">Sign Up</h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
           {session ? (
@@ -145,13 +147,29 @@ export default function LoginPage() {
           ) : (
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Don&apos;t have an account?{' '}
-                <Link href="/signup" className="text-red-500 hover:text-red-600 font-medium">
-                  Sign up
+                Already have an account?{' '}
+                <Link href="/login" className="text-red-500 hover:text-red-600 font-medium">
+                  Sign in
                 </Link>
               </p>
 
               <form onSubmit={onSubmit} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200" htmlFor="firstName">
+                    First name
+                  </label>
+                  <input
+                    id="firstName"
+                    type="text"
+                    autoComplete="given-name"
+                    value={form.firstName}
+                    onChange={(e) => setForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                    placeholder="Your first name"
+                    required
+                  />
+                </div>
+
                 <div className="space-y-1">
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-200" htmlFor="email">
                     Email
@@ -186,13 +204,12 @@ export default function LoginPage() {
                   disabled={isSubmitting}
                   className="w-full px-4 py-3 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors font-semibold"
                 >
-                  {isSubmitting ? 'Please wait…' : 'Email me a sign-in link'}
+                  {isSubmitting ? 'Please wait…' : 'Email me a sign-up link'}
                 </button>
               </form>
             </>
           )}
         </div>
-
       </main>
     </div>
   );
