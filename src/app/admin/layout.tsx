@@ -10,6 +10,7 @@ const adminNavItems = [
   { href: '/admin/orders', label: 'Orders', icon: '📋' },
   { href: '/admin/analytics', label: 'Analytics', icon: '📈' },
   { href: '/admin/newsletter', label: 'Newsletter', icon: '📧' },
+  { href: '/admin/support', label: 'Support', icon: '💬' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ];
 
