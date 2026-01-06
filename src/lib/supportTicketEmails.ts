@@ -1,30 +1,35 @@
-import sgMail from '@sendgrid/mail';
+import "server-only";
+import sgMail from "@sendgrid/mail";
 
 const sendgridApiKey = process.env.SENDGRID_API_KEY;
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
 if (!sendgridApiKey) {
-  console.warn('SENDGRID_API_KEY is not configured');
+  console.warn("SENDGRID_API_KEY is not configured");
 } else {
   sgMail.setApiKey(sendgridApiKey);
 }
 
-export async function sendTicketCreatedEmail(email: string, ticketId: string, subject: string) {
+export async function sendTicketCreatedEmail(
+  email: string,
+  ticketId: string,
+  subject: string
+) {
   if (!sendgridApiKey) {
-    console.warn('Skipping email - SENDGRID_API_KEY not configured');
+    console.warn("Skipping email - SENDGRID_API_KEY not configured");
     return;
   }
 
   try {
     const ticketUrl = `${siteUrl}/support/tickets/${ticketId}`;
-    
+
     await sgMail.send({
       to: email,
       from: {
-        email: 'support@help.optrader.cards',
-        name: 'OP Trader Support',
+        email: "support@help.optrader.cards",
+        name: "OP Trader Support",
       },
-      replyTo: 'support@help.optrader.cards',
+      replyTo: "support@help.optrader.cards",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -52,26 +57,31 @@ export async function sendTicketCreatedEmail(email: string, ticketId: string, su
 
     console.log(`Ticket created email sent to ${email}`);
   } catch (error) {
-    console.error('Error sending ticket created email:', error);
+    console.error("Error sending ticket created email:", error);
   }
 }
 
-export async function sendTicketResponseEmail(email: string, ticketId: string, subject: string, message: string) {
+export async function sendTicketResponseEmail(
+  email: string,
+  ticketId: string,
+  subject: string,
+  message: string
+) {
   if (!sendgridApiKey) {
-    console.warn('Skipping email - SENDGRID_API_KEY not configured');
+    console.warn("Skipping email - SENDGRID_API_KEY not configured");
     return;
   }
 
   try {
     const ticketUrl = `${siteUrl}/support/tickets/${ticketId}`;
-    
+
     await sgMail.send({
       to: email,
       from: {
-        email: 'support@help.optrader.cards',
-        name: 'OP Trader Support',
+        email: "support@help.optrader.cards",
+        name: "OP Trader Support",
       },
-      replyTo: 'support@help.optrader.cards',
+      replyTo: "support@help.optrader.cards",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -98,26 +108,30 @@ export async function sendTicketResponseEmail(email: string, ticketId: string, s
 
     console.log(`Ticket response email sent to ${email}`);
   } catch (error) {
-    console.error('Error sending ticket response email:', error);
+    console.error("Error sending ticket response email:", error);
   }
 }
 
-export async function sendTicketResolvedEmail(email: string, ticketId: string, subject: string) {
+export async function sendTicketResolvedEmail(
+  email: string,
+  ticketId: string,
+  subject: string
+) {
   if (!sendgridApiKey) {
-    console.warn('Skipping email - SENDGRID_API_KEY not configured');
+    console.warn("Skipping email - SENDGRID_API_KEY not configured");
     return;
   }
 
   try {
     const ticketUrl = `${siteUrl}/support/tickets/${ticketId}`;
-    
+
     await sgMail.send({
       to: email,
       from: {
-        email: 'support@help.optrader.cards',
-        name: 'OP Trader Support',
+        email: "support@help.optrader.cards",
+        name: "OP Trader Support",
       },
-      replyTo: 'support@help.optrader.cards',
+      replyTo: "support@help.optrader.cards",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -145,6 +159,6 @@ export async function sendTicketResolvedEmail(email: string, ticketId: string, s
 
     console.log(`Ticket resolved email sent to ${email}`);
   } catch (error) {
-    console.error('Error sending ticket resolved email:', error);
+    console.error("Error sending ticket resolved email:", error);
   }
 }

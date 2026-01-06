@@ -1,36 +1,44 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { useForm } from 'react-hook-form';
-import { type AuthError } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
-import { useUser } from '@/contexts/UserContext';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { type AuthError } from "@supabase/supabase-js";
+import { createClient } from "@/lib/supabase/client";
+import { useUser } from "@/contexts/UserContext";
 
 type SignupFormData = {
   email: string;
   firstName: string;
+  lastName: string;
 };
 
 export default function SignupClient() {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const { user } = useUser();
-  const { register, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<SignupFormData>({
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<SignupFormData>({
     defaultValues: {
-      email: '',
-      firstName: ''
-    }
+      email: "",
+      firstName: "",
+      lastName: "",
+    },
   });
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     // Prefill email from query parameter if redirected from login
-    const emailParam = searchParams.get('email');
+    const emailParam = searchParams.get("email");
     if (emailParam) {
-      setValue('email', emailParam);
+      setValue("email", emailParam);
     }
   }, [searchParams, setValue]);
 
@@ -44,7 +52,10 @@ export default function SignupClient() {
     setMessage(null);
 
     try {
-      const redirectTo = typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+      const redirectTo =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
 
       const { error } = await supabase.auth.signInWithOtp({
         email: data.email,
@@ -53,6 +64,7 @@ export default function SignupClient() {
           shouldCreateUser: true,
           data: {
             first_name: data.firstName.trim(),
+            last_name: data.lastName.trim(),
           },
         },
       });
@@ -61,9 +73,9 @@ export default function SignupClient() {
         return;
       }
 
-      setMessage('Check your email to finish creating your account.');
+      setMessage("Check your email to finish creating your account.");
     } catch {
-      setError('An unexpected error occurred. Please try again.');
+      setError("An unexpected error occurred. Please try again.");
     }
   };
 
@@ -75,25 +87,26 @@ export default function SignupClient() {
       setError(error.message);
       return;
     }
-    setMessage('Signed out.');
+    setMessage("Signed out.");
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <main className="container mx-auto px-4 py-12 max-w-lg">
-        <div className="mb-6">
-          <Link href="/" className="text-sm text-gray-600 dark:text-gray-300 hover:text-red-500 transition-colors">
-            Back to Home
-          </Link>
-        </div>
-        <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">Sign Up</h1>
+        <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-gray-100">
+          Sign Up
+        </h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 space-y-4">
           {user ? (
             <>
               <div className="space-y-1">
-                <p className="text-gray-800 dark:text-gray-100 font-semibold">You&apos;re signed in.</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">{user.email}</p>
+                <p className="text-gray-800 dark:text-gray-100 font-semibold">
+                  You&apos;re signed in.
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  {user.email}
+                </p>
               </div>
 
               {error ? (
@@ -119,35 +132,77 @@ export default function SignupClient() {
           ) : (
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                Already have an account?{' '}
-                <Link href="/login" className="text-red-500 hover:text-red-600 font-medium">
+                Already have an account?{" "}
+                <Link
+                  href="/login"
+                  className="text-red-500 hover:text-red-600 font-medium"
+                >
                   Sign in
                 </Link>
               </p>
 
               <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                 <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200" htmlFor="firstName">
+                  <label
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-200"
+                    htmlFor="firstName"
+                  >
                     First name
                   </label>
                   <input
                     id="firstName"
                     type="text"
                     autoComplete="given-name"
-                    {...register('firstName', {
-                      required: 'First name is required',
-                      minLength: { value: 1, message: 'First name must not be empty' }
+                    {...register("firstName", {
+                      required: "First name is required",
+                      minLength: {
+                        value: 1,
+                        message: "First name must not be empty",
+                      },
                     })}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                     placeholder="Your first name"
                   />
                   {errors.firstName && (
-                    <p className="text-sm text-red-600 dark:text-red-400">{errors.firstName.message}</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {errors.firstName.message}
+                    </p>
                   )}
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200" htmlFor="email">
+                  <label
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-200"
+                    htmlFor="lastName"
+                  >
+                    Last name
+                  </label>
+                  <input
+                    id="lastName"
+                    type="text"
+                    autoComplete="family-name"
+                    {...register("lastName", {
+                      required: "Last name is required",
+                      minLength: {
+                        value: 1,
+                        message: "Last name must not be empty",
+                      },
+                    })}
+                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+                    placeholder="Your last name"
+                  />
+                  {errors.lastName && (
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {errors.lastName.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-200"
+                    htmlFor="email"
+                  >
                     Email
                   </label>
                   <input
@@ -155,16 +210,24 @@ export default function SignupClient() {
                     type="email"
                     inputMode="email"
                     autoComplete="email"
-                    {...register('email', {
-                      required: 'Email is required',
-                      minLength: { value: 4, message: 'Email must be at least 4 characters' },
-                      pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: 'Please enter a valid email' }
+                    {...register("email", {
+                      required: "Email is required",
+                      minLength: {
+                        value: 4,
+                        message: "Email must be at least 4 characters",
+                      },
+                      pattern: {
+                        value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                        message: "Please enter a valid email",
+                      },
                     })}
                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
                     placeholder="you@example.com"
                   />
                   {errors.email && (
-                    <p className="text-sm text-red-600 dark:text-red-400">{errors.email.message}</p>
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {errors.email.message}
+                    </p>
                   )}
                 </div>
 
@@ -185,7 +248,7 @@ export default function SignupClient() {
                   disabled={isSubmitting}
                   className="w-full px-4 py-3 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors font-semibold"
                 >
-                  {isSubmitting ? 'Please wait…' : 'Email me a sign-up link'}
+                  {isSubmitting ? "Please wait…" : "Email me a sign-up link"}
                 </button>
               </form>
             </>

@@ -1,39 +1,50 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import Link from "next/link";
 
 export default async function UserTicketsPage() {
   const supabase = await createClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect('/login?returnUrl=/support/tickets');
+    redirect("/login?returnUrl=/support/tickets");
+  }
+
+  // Get user's personal account
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("id")
+    .eq("primary_owner_user_id", user.id)
+    .eq("personal_account", true)
+    .single();
+
+  if (!account) {
+    return <div>No account found</div>;
   }
 
   const { data: tickets } = await supabase
-    .from('support_tickets')
-    .select(`
-      *,
-      category:support_categories(name),
-      _count:support_messages(count)
-    `)
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .from("support_tickets_view")
+    .select("*")
+    .eq("account_id", account.id)
+    .order("created_at", { ascending: false });
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open':
-        return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200';
-      case 'in_progress':
-        return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
-      case 'waiting_customer':
-        return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
-      case 'closed':
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+      case "open":
+        return "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200";
+      case "in_progress":
+        return "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200";
+      case "waiting_customer":
+        return "bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200";
+      case "resolved":
+        return "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200";
+      case "closed":
+        return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200";
       default:
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+        return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200";
     }
   };
 
@@ -42,8 +53,12 @@ export default async function UserTicketsPage() {
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Your Support Tickets</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Track and manage your support requests</p>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              Your Support Tickets
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              Track and manage your support requests
+            </p>
           </div>
           <Link
             href="/support/create"
@@ -80,7 +95,10 @@ export default async function UserTicketsPage() {
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                 {tickets.map((ticket: any) => (
-                  <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <tr
+                    key={ticket.id}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                         {ticket.subject}
@@ -90,15 +108,19 @@ export default async function UserTicketsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                      {ticket.category?.name}
+                      {ticket.category_name}
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(ticket.status)}`}>
-                        {ticket.status.replace('_', ' ')}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
+                          ticket.status
+                        )}`}
+                      >
+                        {ticket.status.replace("_", " ")}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
-                      {ticket._count || 0} messages
+                      {ticket.message_count || 0} messages
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
                       {new Date(ticket.created_at).toLocaleDateString()}
@@ -117,7 +139,9 @@ export default async function UserTicketsPage() {
             </table>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-500 dark:text-gray-400 mb-4">You haven't created any support tickets yet</p>
+              <p className="text-gray-500 dark:text-gray-400 mb-4">
+                You haven't created any support tickets yet
+              </p>
               <Link
                 href="/support/create"
                 className="inline-block px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors"

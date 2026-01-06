@@ -1,55 +1,54 @@
-import { createClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
-import { isAdmin } from '@/lib/admin';
-import Link from 'next/link';
+import { createClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { isAdmin } from "@/lib/admin";
+import Link from "next/link";
 
 export default async function AdminTicketsPage() {
   const adminCheck = await isAdmin();
   if (!adminCheck) {
-    redirect('/login?error_type=unauthorized&returnUrl=/admin/support');
+    redirect("/login?error_type=unauthorized&returnUrl=/admin/support");
   }
 
   const supabase = await createClient();
 
-  const { data: tickets } = await supabase
-    .from('support_tickets')
-    .select(`
-      *,
-      user:auth.users(email),
-      category:support_categories(name),
-      assigned:auth.users!assigned_to(email)
-    `)
-    .order('created_at', { ascending: false });
+  const { data: tickets, error } = await supabase
+    .from("support_tickets_view")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching tickets:", error);
+  }
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open':
-        return 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200';
-      case 'in_progress':
-        return 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200';
-      case 'waiting_customer':
-        return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200';
-      case 'resolved':
-        return 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200';
-      case 'closed':
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+      case "open":
+        return "bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200";
+      case "in_progress":
+        return "bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200";
+      case "waiting_customer":
+        return "bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200";
+      case "resolved":
+        return "bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200";
+      case "closed":
+        return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200";
       default:
-        return 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
+        return "bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200";
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'low':
-        return 'text-gray-500 dark:text-gray-400';
-      case 'medium':
-        return 'text-blue-500 dark:text-blue-400';
-      case 'high':
-        return 'text-orange-500 dark:text-orange-400';
-      case 'urgent':
-        return 'text-red-500 dark:text-red-400';
+      case "low":
+        return "text-gray-500 dark:text-gray-400";
+      case "medium":
+        return "text-blue-500 dark:text-blue-400";
+      case "high":
+        return "text-orange-500 dark:text-orange-400";
+      case "urgent":
+        return "text-red-500 dark:text-red-400";
       default:
-        return 'text-gray-500 dark:text-gray-400';
+        return "text-gray-500 dark:text-gray-400";
     }
   };
 
@@ -57,8 +56,12 @@ export default async function AdminTicketsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Support Tickets</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manage customer support requests</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            Support Tickets
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Manage customer support requests
+          </p>
         </div>
       </div>
 
@@ -92,7 +95,10 @@ export default async function AdminTicketsPage() {
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
               {tickets.map((ticket: any) => (
-                <tr key={ticket.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                <tr
+                  key={ticket.id}
+                  className="hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
                   <td className="px-6 py-4">
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
                       {ticket.subject}
@@ -102,17 +108,25 @@ export default async function AdminTicketsPage() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {ticket.user?.email}
+                    {ticket.customer_email || "N/A"}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-900 dark:text-gray-100">
-                    {ticket.category?.name}
+                    {ticket.category_name}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(ticket.status)}`}>
-                      {ticket.status.replace('_', ' ')}
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(
+                        ticket.status
+                      )}`}
+                    >
+                      {ticket.status.replace("_", " ")}
                     </span>
                   </td>
-                  <td className={`px-6 py-4 text-sm font-medium ${getPriorityColor(ticket.priority)}`}>
+                  <td
+                    className={`px-6 py-4 text-sm font-medium ${getPriorityColor(
+                      ticket.priority
+                    )}`}
+                  >
                     {ticket.priority}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">
@@ -132,7 +146,9 @@ export default async function AdminTicketsPage() {
           </table>
         ) : (
           <div className="text-center py-12">
-            <p className="text-gray-500 dark:text-gray-400">No support tickets yet</p>
+            <p className="text-gray-500 dark:text-gray-400">
+              No support tickets yet
+            </p>
           </div>
         )}
       </div>

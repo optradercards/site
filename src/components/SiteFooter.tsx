@@ -1,35 +1,37 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
-import Image from 'next/image';
-import { useState } from 'react';
-import { subscribeToNewsletter } from '@/lib/newsletter';
+import Link from "next/link";
+import Image from "next/image";
+import { useState } from "react";
+import { subscribeToNewsletter } from "@/lib/newsletter";
 
 export default function SiteFooter() {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"success" | "error">(
+    "success"
+  );
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
-    setMessage('');
+    setMessage("");
     setIsLoading(true);
 
     if (!email) {
-      setMessage('Please enter your email');
-      setMessageType('error');
+      setMessage("Please enter your email");
+      setMessageType("error");
       setIsLoading(false);
       return;
     }
 
     const result = await subscribeToNewsletter(email);
     setMessage(result.message);
-    setMessageType(result.success ? 'success' : 'error');
+    setMessageType(result.success ? "success" : "error");
 
     if (result.success) {
-      setEmail('');
-      setTimeout(() => setMessage(''), 4000);
+      setEmail("");
+      setTimeout(() => setMessage(""), 4000);
     }
 
     setIsLoading(false);
@@ -44,7 +46,8 @@ export default function SiteFooter() {
             <div>
               <h3 className="text-lg font-bold mb-2">Stay Updated</h3>
               <p className="text-gray-300 dark:text-gray-400 text-sm">
-                Get the latest trading tips, market insights, and OP Trader updates delivered to your inbox.
+                Get the latest trading tips, market insights, and OP Trader
+                updates delivered to your inbox.
               </p>
             </div>
             <form onSubmit={handleSubscribe} className="flex flex-col gap-2">
@@ -62,11 +65,15 @@ export default function SiteFooter() {
                   disabled={isLoading}
                   className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoading ? 'Subscribing...' : 'Subscribe'}
+                  {isLoading ? "Subscribing..." : "Subscribe"}
                 </button>
               </div>
               {message && (
-                <p className={`text-sm ${messageType === 'error' ? 'text-red-400' : 'text-green-400'}`}>
+                <p
+                  className={`text-sm ${
+                    messageType === "error" ? "text-red-400" : "text-green-400"
+                  }`}
+                >
                   {message}
                 </p>
               )}
@@ -103,23 +110,35 @@ export default function SiteFooter() {
             <h4 className="font-semibold mb-4">Product</h4>
             <ul className="space-y-2 text-sm text-gray-300 dark:text-gray-400">
               <li>
-                <Link href="/#marketplace" className="hover:text-white transition-colors">
+                <Link
+                  href="/#marketplace"
+                  className="hover:text-white transition-colors"
+                >
                   Marketplace
                 </Link>
               </li>
               <li>
-                <Link href="/#collection" className="hover:text-white transition-colors">
+                <Link
+                  href="/#collection"
+                  className="hover:text-white transition-colors"
+                >
                   My Collection
                 </Link>
               </li>
               <li>
-                <Link href="/about" className="hover:text-white transition-colors">
+                <Link
+                  href="/about"
+                  className="hover:text-white transition-colors"
+                >
                   About
                 </Link>
               </li>
               <li>
-                <Link href="/become-a-dealer" className="hover:text-white transition-colors">
-                  Become a Dealer
+                <Link
+                  href="/become-a-trader"
+                  className="hover:text-white transition-colors"
+                >
+                  Become a Trader
                 </Link>
               </li>
             </ul>
@@ -130,12 +149,18 @@ export default function SiteFooter() {
             <h4 className="font-semibold mb-4">Support</h4>
             <ul className="space-y-2 text-sm text-gray-300 dark:text-gray-400">
               <li>
-                <Link href="/contact" className="hover:text-white transition-colors">
+                <Link
+                  href="/contact"
+                  className="hover:text-white transition-colors"
+                >
                   Contact Us
                 </Link>
               </li>
               <li>
-                <a href="mailto:support@optrader.com" className="hover:text-white transition-colors">
+                <a
+                  href="mailto:support@optrader.com"
+                  className="hover:text-white transition-colors"
+                >
                   Email Support
                 </a>
               </li>
@@ -152,12 +177,18 @@ export default function SiteFooter() {
             <h4 className="font-semibold mb-4">Legal</h4>
             <ul className="space-y-2 text-sm text-gray-300 dark:text-gray-400">
               <li>
-                <Link href="/privacy-policy" className="hover:text-white transition-colors">
+                <Link
+                  href="/privacy-policy"
+                  className="hover:text-white transition-colors"
+                >
                   Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link href="/terms-of-service" className="hover:text-white transition-colors">
+                <Link
+                  href="/terms-of-service"
+                  className="hover:text-white transition-colors"
+                >
                   Terms of Service
                 </Link>
               </li>
@@ -167,7 +198,9 @@ export default function SiteFooter() {
 
         {/* Bottom Section */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4 pt-8 border-t border-gray-700 dark:border-gray-800 text-sm text-gray-300 dark:text-gray-400">
-          <p suppressHydrationWarning>© {new Date().getFullYear()} OP Trader. All rights reserved.</p>
+          <p suppressHydrationWarning>
+            © {new Date().getFullYear()} OP Trader. All rights reserved.
+          </p>
           <div className="flex gap-6">
             <a href="#twitter" className="hover:text-white transition-colors">
               Twitter

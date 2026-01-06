@@ -1,17 +1,19 @@
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { isAdmin } from '@/lib/admin';
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { isAdmin } from "@/lib/admin";
+
+export const dynamic = "force-dynamic";
 
 const adminNavItems = [
-  { href: '/admin', label: 'Dashboard', icon: '📊' },
-  { href: '/admin/users', label: 'Users', icon: '👥' },
-  { href: '/admin/dealers', label: 'Dealers', icon: '🤝' },
-  { href: '/admin/products', label: 'Products', icon: '📦' },
-  { href: '/admin/orders', label: 'Orders', icon: '📋' },
-  { href: '/admin/analytics', label: 'Analytics', icon: '📈' },
-  { href: '/admin/newsletter', label: 'Newsletter', icon: '📧' },
-  { href: '/admin/support', label: 'Support', icon: '💬' },
-  { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
+  { href: "/admin", label: "Dashboard", icon: "📊" },
+  { href: "/admin/users", label: "Users", icon: "👥" },
+  { href: "/admin/traders", label: "Traders", icon: "🤝" },
+  { href: "/admin/products", label: "Products", icon: "📦" },
+  { href: "/admin/orders", label: "Orders", icon: "📋" },
+  { href: "/admin/analytics", label: "Analytics", icon: "📈" },
+  { href: "/admin/newsletter", label: "Newsletter", icon: "📧" },
+  { href: "/admin/support", label: "Support", icon: "💬" },
+  { href: "/admin/settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default async function AdminLayout({
@@ -22,7 +24,7 @@ export default async function AdminLayout({
   const adminCheck = await isAdmin();
 
   if (!adminCheck) {
-    redirect('/login?error_type=unauthorized&returnUrl=/admin');
+    redirect("/login?error_type=unauthorized&returnUrl=/admin");
   }
 
   return (
@@ -65,7 +67,7 @@ export default async function AdminLayout({
 
         {/* Main Content */}
         <main className="flex-1 p-8">
-          {children}
+          <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
     </div>

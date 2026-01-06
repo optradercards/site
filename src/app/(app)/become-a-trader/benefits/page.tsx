@@ -1,55 +1,106 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
+import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: 'Benefits - Become a Dealer - OP Trader',
-  description: 'Learn about the benefits of becoming an OP Trader dealer.',
+  title: "Benefits - Become a Trader - OP Trader",
+  description: "Learn about the benefits of becoming an OP Trader.",
 };
 
 export default function BenefitsPage() {
   const benefits = [
     {
-      category: 'Financial',
+      category: "Financial",
       items: [
-        { title: 'Wholesale Pricing', desc: 'Access exclusive wholesale rates for maximum margins' },
-        { title: 'Commission Program', desc: 'Earn additional commissions on volume and referrals' },
-        { title: 'Fast Payouts', desc: 'Receive payments within 24 hours of transaction settlement' },
-        { title: 'Volume Discounts', desc: 'Better pricing as your order volume increases' },
+        {
+          title: "Wholesale Pricing",
+          desc: "Access exclusive wholesale rates for maximum margins",
+        },
+        {
+          title: "Commission Program",
+          desc: "Earn additional commissions on volume and referrals",
+        },
+        {
+          title: "Fast Payouts",
+          desc: "Receive payments within 24 hours of transaction settlement",
+        },
+        {
+          title: "Volume Discounts",
+          desc: "Better pricing as your order volume increases",
+        },
       ],
     },
     {
-      category: 'Operational',
+      category: "Operational",
       items: [
-        { title: 'Inventory Management', desc: 'Automated tracking and stock level optimization' },
-        { title: 'Order Automation', desc: 'Batch orders and auto-reordering for efficiency' },
-        { title: 'Integration Support', desc: 'Easy API integration with your existing systems' },
-        { title: 'Real-Time Data', desc: 'Live analytics and market insights for decision making' },
+        {
+          title: "Inventory Management",
+          desc: "Automated tracking and stock level optimization",
+        },
+        {
+          title: "Order Automation",
+          desc: "Batch orders and auto-reordering for efficiency",
+        },
+        {
+          title: "Integration Support",
+          desc: "Easy API integration with your existing systems",
+        },
+        {
+          title: "Real-Time Data",
+          desc: "Live analytics and market insights for decision making",
+        },
       ],
     },
     {
-      category: 'Marketing & Growth',
+      category: "Marketing & Growth",
       items: [
-        { title: 'Marketing Materials', desc: 'Professional templates, graphics, and campaigns' },
-        { title: 'Brand Building', desc: 'White-label options available for select dealers' },
-        { title: 'Lead Generation', desc: 'Referral program and customer matching tools' },
-        { title: 'Training & Webinars', desc: 'Regular training on products, market trends, and best practices' },
+        {
+          title: "Marketing Materials",
+          desc: "Professional templates, graphics, and campaigns",
+        },
+        {
+          title: "Brand Building",
+          desc: "White-label options available for select partners",
+        },
+        {
+          title: "Lead Generation",
+          desc: "Referral program and customer matching tools",
+        },
+        {
+          title: "Training & Webinars",
+          desc: "Regular training on products, market trends, and best practices",
+        },
       ],
     },
     {
-      category: 'Support & Partnership',
+      category: "Support & Partnership",
       items: [
-        { title: 'Dedicated Manager', desc: 'Personal account manager to support your growth' },
-        { title: 'Priority Support', desc: '24/5 priority support team for urgent issues' },
-        { title: 'Community Network', desc: 'Connect with other dealers for best practice sharing' },
-        { title: 'Exclusive Events', desc: 'Invitations to dealer conferences and networking events' },
+        {
+          title: "Dedicated Manager",
+          desc: "Personal account manager to support your growth",
+        },
+        {
+          title: "Priority Support",
+          desc: "24/5 priority support team for urgent issues",
+        },
+        {
+          title: "Community Network",
+          desc: "Connect with other traders for best practice sharing",
+        },
+        {
+          title: "Exclusive Events",
+          desc: "Invitations to trader conferences and networking events",
+        },
       ],
     },
   ];
 
   return (
-    <div className="container mx-auto px-4 py-12 max-w-4xl">
+    <div className="container mx-auto px-4 py-12">
       <div className="mb-8">
-        <Link href="/become-a-dealer" className="text-red-500 hover:text-red-600 font-medium">
+        <Link
+          href="/become-a-trader"
+          className="text-red-500 hover:text-red-600 font-medium"
+        >
           ← Back
         </Link>
       </div>
@@ -57,10 +108,11 @@ export default function BenefitsPage() {
       <div className="space-y-8">
         <div>
           <h1 className="text-4xl md:text-5xl font-bold mb-4 text-gray-800 dark:text-gray-100">
-            Dealer Benefits
+            Trader Benefits
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-400">
-            Discover the comprehensive benefits of joining the OP Trader dealer network.
+            Discover the comprehensive benefits of joining the OP Trader
+            network.
           </p>
         </div>
 
@@ -93,15 +145,19 @@ export default function BenefitsPage() {
         {/* Comparison Table */}
         <div>
           <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">
-            Dealer vs Non-Dealer
+            Trader vs Non-Trader
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-100 dark:bg-gray-900">
                   <th className="px-4 py-3 text-left font-semibold">Feature</th>
-                  <th className="px-4 py-3 text-center font-semibold">Retailers</th>
-                  <th className="px-4 py-3 text-center font-semibold">Dealers</th>
+                  <th className="px-4 py-3 text-center font-semibold">
+                    Retailers
+                  </th>
+                  <th className="px-4 py-3 text-center font-semibold">
+                    Traders
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -143,30 +199,42 @@ export default function BenefitsPage() {
         {/* Success Stories Teaser */}
         <div className="bg-green-50 dark:bg-green-950 p-8 rounded-lg">
           <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-100">
-            Dealer Success
+            Trader Success
           </h2>
           <p className="text-gray-600 dark:text-gray-400 mb-6">
-            Our dealers see an average of 40% higher margins and 3x faster growth compared to non-dealer retailers.
+            Our traders see an average of 40% higher margins and 3x faster
+            growth compared to non-trader retailers.
           </p>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="text-center">
               <div className="text-3xl font-bold text-green-600 mb-2">40%</div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Higher Margins</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Higher Margins
+              </p>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-green-600 mb-2">3x</div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Faster Growth</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Faster Growth
+              </p>
             </div>
             <div className="text-center">
               <div className="text-3xl font-bold text-green-600 mb-2">95%</div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Retention Rate</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Retention Rate
+              </p>
             </div>
           </div>
         </div>
 
         <div className="bg-gradient-to-r from-red-500 to-red-600 text-white p-8 rounded-lg">
-          <h2 className="text-2xl font-bold mb-4">Unlock These Benefits Today</h2>
-          <p className="mb-6">Join 500+ successful dealers and start experiencing the OP Trader difference.</p>
+          <h2 className="text-2xl font-bold mb-4">
+            Unlock These Benefits Today
+          </h2>
+          <p className="mb-6">
+            Join 500+ successful traders and start experiencing the OP Trader
+            difference.
+          </p>
           <button className="bg-white text-red-600 hover:bg-gray-100 font-semibold px-8 py-3 rounded transition-colors">
             Apply Now
           </button>

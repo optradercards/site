@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import Link from 'next/link';
-import { toast } from 'sonner';
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { toast } from "sonner";
 
 type Campaign = {
   id: string;
@@ -20,19 +20,19 @@ export default function EditCampaignPage() {
   const params = useParams();
   const router = useRouter();
   const supabase = createClient();
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [showTestDialog, setShowTestDialog] = useState(false);
-  const [testEmail, setTestEmail] = useState('');
+  const [testEmail, setTestEmail] = useState("");
 
   const [formData, setFormData] = useState({
-    subject: '',
-    fromName: '',
-    fromEmail: '',
-    previewText: '',
-    htmlContent: '',
+    subject: "",
+    fromName: "",
+    fromEmail: "",
+    previewText: "",
+    htmlContent: "",
   });
 
   useEffect(() => {
@@ -42,16 +42,16 @@ export default function EditCampaignPage() {
   const loadCampaign = async () => {
     try {
       const { data, error } = await supabase
-        .from('newsletter_campaigns')
-        .select('*')
-        .eq('id', params.id)
+        .from("newsletter_campaigns")
+        .select("*")
+        .eq("id", params.id)
         .single();
 
       if (error) throw error;
 
       // Only allow editing draft campaigns
-      if (data.status !== 'draft') {
-        toast.error('Only draft campaigns can be edited');
+      if (data.status !== "draft") {
+        toast.error("Only draft campaigns can be edited");
         router.push(`/admin/newsletter/campaigns/${params.id}`);
         return;
       }
@@ -60,13 +60,13 @@ export default function EditCampaignPage() {
         subject: data.subject,
         fromName: data.from_name,
         fromEmail: data.from_email,
-        previewText: data.preview_text || '',
+        previewText: data.preview_text || "",
         htmlContent: data.html_content,
       });
     } catch (error) {
-      console.error('Error loading campaign:', error);
-      toast.error('Failed to load campaign');
-      router.push('/admin/newsletter/campaigns');
+      console.error("Error loading campaign:", error);
+      toast.error("Failed to load campaign");
+      router.push("/admin/newsletter/campaigns");
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +78,7 @@ export default function EditCampaignPage() {
 
     try {
       const { error } = await supabase
-        .from('newsletter_campaigns')
+        .from("newsletter_campaigns")
         .update({
           subject: formData.subject,
           from_name: formData.fromName,
@@ -86,15 +86,15 @@ export default function EditCampaignPage() {
           preview_text: formData.previewText,
           html_content: formData.htmlContent,
         })
-        .eq('id', params.id);
+        .eq("id", params.id);
 
       if (error) throw error;
 
-      toast.success('Campaign updated successfully!');
+      toast.success("Campaign updated successfully!");
       router.push(`/admin/newsletter/campaigns/${params.id}`);
     } catch (error) {
-      console.error('Error updating campaign:', error);
-      toast.error('Failed to update campaign');
+      console.error("Error updating campaign:", error);
+      toast.error("Failed to update campaign");
     } finally {
       setIsSaving(false);
     }
@@ -102,19 +102,21 @@ export default function EditCampaignPage() {
 
   const handleSendTest = async () => {
     if (!testEmail) {
-      toast.error('Please enter a test email address');
+      toast.error("Please enter a test email address");
       return;
     }
 
     setIsSendingTest(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      const response = await fetch('/api/admin/newsletter/send', {
-        method: 'POST',
+      const response = await fetch("/api/admin/newsletter/send", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
         },
         body: JSON.stringify({
           campaignId: params.id,
@@ -122,25 +124,25 @@ export default function EditCampaignPage() {
         }),
       });
 
-      const contentType = response.headers.get('content-type');
+      const contentType = response.headers.get("content-type");
       if (!response.ok) {
-        let errorMessage = 'Failed to send test email';
-        if (contentType?.includes('application/json')) {
+        let errorMessage = "Failed to send test email";
+        if (contentType?.includes("application/json")) {
           const error = await response.json();
           errorMessage = error.error || errorMessage;
         } else {
           const text = await response.text();
-          console.error('Non-JSON error response:', text);
+          console.error("Non-JSON error response:", text);
         }
         throw new Error(errorMessage);
       }
 
-      toast.success('Test email sent successfully!');
+      toast.success("Test email sent successfully!");
       setShowTestDialog(false);
-      setTestEmail('');
+      setTestEmail("");
     } catch (error: any) {
-      console.error('Error sending test:', error);
-      toast.error(error.message || 'Failed to send test email');
+      console.error("Error sending test:", error);
+      toast.error(error.message || "Failed to send test email");
     } finally {
       setIsSendingTest(false);
     }
@@ -154,7 +156,7 @@ export default function EditCampaignPage() {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${formData.subject || 'Newsletter'}</title>
+  <title>${formData.subject || "Newsletter"}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -222,18 +224,24 @@ export default function EditCampaignPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-red-600 border-r-transparent"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading campaign...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">
+            Loading campaign...
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Edit Campaign</h1>
-          <p className="text-gray-600 dark:text-gray-400">Update your newsletter campaign</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+            Edit Campaign
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400">
+            Update your newsletter campaign
+          </p>
         </div>
         <div className="flex gap-3">
           <Link
@@ -262,7 +270,9 @@ export default function EditCampaignPage() {
               type="text"
               required
               value={formData.subject}
-              onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, subject: e.target.value })
+              }
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               placeholder="Your amazing newsletter subject"
             />
@@ -277,7 +287,9 @@ export default function EditCampaignPage() {
                 type="text"
                 required
                 value={formData.fromName}
-                onChange={(e) => setFormData({ ...formData, fromName: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, fromName: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 placeholder="OP Trader"
               />
@@ -290,7 +302,9 @@ export default function EditCampaignPage() {
                 type="email"
                 required
                 value={formData.fromEmail}
-                onChange={(e) => setFormData({ ...formData, fromEmail: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, fromEmail: e.target.value })
+                }
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 placeholder="newsletter@optrader.cards"
               />
@@ -304,7 +318,9 @@ export default function EditCampaignPage() {
             <input
               type="text"
               value={formData.previewText}
-              onChange={(e) => setFormData({ ...formData, previewText: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, previewText: e.target.value })
+              }
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
               placeholder="This text appears in the email preview..."
             />
@@ -329,13 +345,19 @@ export default function EditCampaignPage() {
             <textarea
               required
               value={formData.htmlContent}
-              onChange={(e) => setFormData({ ...formData, htmlContent: e.target.value })}
+              onChange={(e) =>
+                setFormData({ ...formData, htmlContent: e.target.value })
+              }
               rows={20}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm"
               placeholder="<html>...</html>"
             />
             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              Use <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">{'{{unsubscribe_url}}'}</code> to include the unsubscribe link
+              Use{" "}
+              <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">
+                {"{{unsubscribe_url}}"}
+              </code>{" "}
+              to include the unsubscribe link
             </p>
           </div>
         </div>
@@ -352,7 +374,7 @@ export default function EditCampaignPage() {
             disabled={isSaving}
             className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSaving ? 'Saving...' : 'Update Campaign'}
+            {isSaving ? "Saving..." : "Update Campaign"}
           </button>
         </div>
       </form>
@@ -378,7 +400,7 @@ export default function EditCampaignPage() {
               <button
                 onClick={() => {
                   setShowTestDialog(false);
-                  setTestEmail('');
+                  setTestEmail("");
                 }}
                 disabled={isSendingTest}
                 className="px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
@@ -390,7 +412,7 @@ export default function EditCampaignPage() {
                 disabled={isSendingTest || !testEmail}
                 className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSendingTest ? 'Sending...' : 'Send Test'}
+                {isSendingTest ? "Sending..." : "Send Test"}
               </button>
             </div>
           </div>

@@ -1,31 +1,31 @@
-import type { Metadata } from 'next';
-import Link from 'next/link';
+import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: 'Become a Dealer - OP Trader',
-  description: 'Join the OP Trader dealer network and start earning.',
+  title: "Become a Trader - OP Trader",
+  description: "Join the OP Trader network and start earning.",
 };
 
-export default function DealerLayout({
+export default function TraderLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const dealerNavItems = [
-    { href: '/become-a-dealer', label: 'Overview' },
-    { href: '/become-a-dealer/features', label: 'Features' },
-    { href: '/become-a-dealer/how-it-works', label: 'How It Works' },
-    { href: '/become-a-dealer/benefits', label: 'Benefits' },
-    { href: '/become-a-dealer/requirements', label: 'Requirements' },
+  const traderNavItems = [
+    { href: "/become-a-trader", label: "Overview" },
+    { href: "/become-a-trader/features", label: "Features" },
+    { href: "/become-a-trader/how-it-works", label: "How It Works" },
+    { href: "/become-a-trader/benefits", label: "Benefits" },
+    { href: "/become-a-trader/requirements", label: "Requirements" },
   ];
 
   return (
     <div>
-      {/* Dealer Navigation */}
+      {/* Trader Navigation */}
       <nav className="bg-gray-100 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
         <div className="container mx-auto px-4">
           <div className="flex gap-8 overflow-x-auto py-4">
-            {dealerNavItems.map((item) => (
+            {traderNavItems.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
