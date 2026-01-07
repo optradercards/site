@@ -20,6 +20,19 @@ export default async function AdminTicketsPage() {
     console.error("Error fetching tickets:", error);
   }
 
+  // Fetch emails for each ticket using the secure RPC
+  const ticketsWithEmails = await Promise.all(
+    (tickets || []).map(async (ticket) => {
+      const { data: emailData } = await supabase
+        .rpc("get_ticket_email", { p_ticket_id: ticket.id })
+        .single();
+      return {
+        ...ticket,
+        customer_email: emailData?.email || null,
+      };
+    })
+  );
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "open":
@@ -66,7 +79,7 @@ export default async function AdminTicketsPage() {
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        {tickets && tickets.length > 0 ? (
+        {ticketsWithEmails && ticketsWithEmails.length > 0 ? (
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
@@ -94,7 +107,7 @@ export default async function AdminTicketsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {tickets.map((ticket: any) => (
+              {ticketsWithEmails.map((ticket: any) => (
                 <tr
                   key={ticket.id}
                   className="hover:bg-gray-50 dark:hover:bg-gray-700"

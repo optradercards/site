@@ -62,14 +62,19 @@ export default function SupportSettingsPage() {
       return;
     }
 
-    fetchData();
+    // Fetch categories once
+    fetchCategories();
   }, [user, router]);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    // Fetch tickets when account_id becomes available
+    if (profileData?.account.account_id) {
+      fetchTickets();
+    }
+  }, [profileData?.account.account_id]);
 
-      // Fetch categories
+  const fetchCategories = async () => {
+    try {
       const { data: categoriesData, error: categoriesError } = await supabase
         .from("support_categories")
         .select("*")
@@ -77,44 +82,49 @@ export default function SupportSettingsPage() {
 
       if (categoriesError) throw categoriesError;
       setCategories(categoriesData || []);
-
-      // Fetch user's tickets
-      if (profileData?.account.account_id) {
-        const { data: ticketsData, error: ticketsError } = await supabase
-          .from("support_tickets")
-          .select(
-            `
-            id,
-            subject,
-            status,
-            priority,
-            created_at,
-            category_id,
-            support_categories (
-              name
-            )
-          `
-          )
-          .eq("account_id", profileData.account.account_id)
-          .order("created_at", { ascending: false });
-
-        if (ticketsError) throw ticketsError;
-
-        const formattedTickets =
-          ticketsData?.map((ticket: any) => ({
-            id: ticket.id,
-            subject: ticket.subject,
-            status: ticket.status,
-            priority: ticket.priority,
-            created_at: ticket.created_at,
-            category_name: ticket.support_categories?.name || null,
-          })) || [];
-
-        setTickets(formattedTickets);
-      }
     } catch (err) {
-      console.error("Error fetching support data:", err);
-      setError("Failed to load support information");
+      console.error("Error fetching categories:", err);
+    }
+  };
+
+  const fetchTickets = async () => {
+    try {
+      setLoading(true);
+
+      const { data: ticketsData, error: ticketsError } = await supabase
+        .from("support_tickets")
+        .select(
+          `
+          id,
+          subject,
+          status,
+          priority,
+          created_at,
+          category_id,
+          support_categories (
+            name
+          )
+        `
+        )
+        .eq("account_id", profileData!.account.account_id)
+        .order("created_at", { ascending: false });
+
+      if (ticketsError) throw ticketsError;
+
+      const formattedTickets =
+        ticketsData?.map((ticket: any) => ({
+          id: ticket.id,
+          subject: ticket.subject,
+          status: ticket.status,
+          priority: ticket.priority,
+          created_at: ticket.created_at,
+          category_name: ticket.support_categories?.name || null,
+        })) || [];
+
+      setTickets(formattedTickets);
+    } catch (err) {
+      console.error("Error fetching tickets:", err);
+      setError("Failed to load support tickets");
     } finally {
       setLoading(false);
     }
@@ -132,29 +142,37 @@ export default function SupportSettingsPage() {
     }
 
     try {
-      const { error: insertError } = await supabase
-        .from("support_tickets")
-        .insert({
-          account_id: profileData.account.account_id,
-          category_id: data.category || null,
-          subject: data.subject,
-          description: data.description,
-          status: "open",
-          priority: "medium",
-        });
+      // Use RPC function to create ticket
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "create_support_ticket",
+        {
+          p_subject: data.subject,
+          p_description: data.description,
+          p_category_id: data.category || null,
+        }
+      );
 
-      if (insertError) throw insertError;
+      if (rpcError) throw rpcError;
+
+      // RPC returns a table result - check the first row
+      const result = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      if (!result?.success) {
+        throw new Error(result?.message || "Failed to create ticket");
+      }
 
       setMessage("Support ticket created successfully! We'll respond soon.");
       reset();
-      await fetchData(); // Refresh tickets list
+      console.log(
+        "[SupportSettingsPage] Ticket created, refreshing tickets silently"
+      );
+      await fetchTickets(); // Refresh tickets list
       setTimeout(() => {
         setIsModalOpen(false);
         setMessage(null);
       }, 2000);
     } catch (err: any) {
       console.error("Error creating support ticket:", err);
-      setError("Failed to create support ticket");
+      setError(err.message || "Failed to create support ticket");
     } finally {
       setSubmitting(false);
     }

@@ -31,15 +31,12 @@ export interface SupportTicket {
 // Support ticket view type (from support_tickets_view)
 export interface SupportTicketView extends SupportTicket {
   category_name: string | null;
-  assigned_to_email: string | null;
   assigned_to_name: string | null;
-  customer_email: string | null;
   customer_name: string | null;
   message_count: number;
   last_message_at: string | null;
   last_message_text: string | null;
   last_message_sender_type: MessageSenderType | null;
-  last_message_sender_email: string | null;
 }
 
 // Support message type (from support_messages table)

@@ -63,19 +63,14 @@ export default function SupportTicketDetailPage() {
       return;
     }
 
-    if (ticketId) {
+    if (ticketId && profileData?.account.account_id) {
       fetchTicketData();
     }
-  }, [user, ticketId, router]);
+  }, [user, ticketId, router, profileData?.account.account_id]);
 
   const fetchTicketData = async () => {
     try {
       setLoading(true);
-
-      if (!profileData?.account.account_id) {
-        setError("Account not found");
-        return;
-      }
 
       // Fetch ticket details
       const { data: ticketData, error: ticketError } = await supabase
@@ -96,7 +91,7 @@ export default function SupportTicketDetailPage() {
         `
         )
         .eq("id", ticketId)
-        .eq("account_id", profileData.account.account_id)
+        .eq("account_id", profileData!.account.account_id)
         .single();
 
       if (ticketError) throw ticketError;
@@ -139,9 +134,9 @@ export default function SupportTicketDetailPage() {
           id: msg.id,
           message: msg.message,
           created_at: msg.created_at,
-          is_staff: msg.account_id !== profileData.account.account_id,
+          is_staff: msg.account_id !== profileData!.account.account_id,
           sender_name:
-            msg.account_id === profileData.account.account_id
+            msg.account_id === profileData!.account.account_id
               ? "You"
               : "Support Team",
         })) || [];
@@ -167,15 +162,24 @@ export default function SupportTicketDetailPage() {
     }
 
     try {
-      const { error: insertError } = await supabase
-        .from("support_messages")
-        .insert({
-          ticket_id: ticketId,
-          account_id: profileData.account.account_id,
-          message: data.message,
-        });
+      // Use RPC function instead of direct insert to match database schema
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        "add_ticket_message",
+        {
+          p_ticket_id: ticketId,
+          p_message: data.message,
+        }
+      );
 
-      if (insertError) throw insertError;
+      if (rpcError) throw rpcError;
+
+      // RPC returns a table result - check the first row
+      const result = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+      if (!result?.success) {
+        throw new Error(
+          result?.error_text || result?.error || "Failed to send reply"
+        );
+      }
 
       setMessage("Reply sent successfully");
       reset();
@@ -183,7 +187,7 @@ export default function SupportTicketDetailPage() {
       setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
       console.error("Error sending reply:", err);
-      setError("Failed to send reply");
+      setError(err.message || "Failed to send reply");
     } finally {
       setSubmitting(false);
     }

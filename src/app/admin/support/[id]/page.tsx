@@ -22,6 +22,7 @@ export default function TicketDetailPage() {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [customerEmail, setCustomerEmail] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [newStatus, setNewStatus] = useState<TicketStatus>("open");
@@ -29,6 +30,7 @@ export default function TicketDetailPage() {
   useEffect(() => {
     loadTicket();
     loadMessages();
+    loadCustomerEmail();
   }, [params.id]);
 
   const loadTicket = async () => {
@@ -47,6 +49,19 @@ export default function TicketDetailPage() {
       toast.error("Failed to load ticket");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const loadCustomerEmail = async () => {
+    try {
+      const { data, error } = await supabase
+        .rpc("get_ticket_email", { p_ticket_id: params.id })
+        .single();
+
+      if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
+      setCustomerEmail(data?.email || null);
+    } catch (error) {
+      console.error("Error loading customer email:", error);
     }
   };
 
@@ -282,7 +297,7 @@ export default function TicketDetailPage() {
             <div className="text-gray-900 dark:text-gray-100">
               <p className="font-medium">{ticket.customer_name}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {ticket.customer_email}
+                {customerEmail || "—"}
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                 {ticket.account_id ? "Registered User" : "Guest"}
