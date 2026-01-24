@@ -1,7 +1,7 @@
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { isAdmin } from '@/lib/admin';
-import { NavMenu } from './nav-menu';
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { isAdmin } from "@/lib/admin";
+import { NavMenu } from "./nav-menu";
 
 interface NavItem {
   href?: string;
@@ -11,48 +11,62 @@ interface NavItem {
 }
 
 const adminNavItems: NavItem[] = [
-  { href: '/admin', label: 'Dashboard', icon: '📊' },
+  { href: "/admin", label: "Dashboard", icon: "📊" },
   {
-    label: 'Team Management',
-    icon: '👥',
+    label: "Team Management",
+    icon: "👥",
     children: [
-      { href: '/admin/users', label: 'Users', icon: '👤' },
-      { href: '/admin/traders', label: 'Traders', icon: '🤝' },
+      { href: "/admin/users", label: "Users", icon: "👤" },
+      { href: "/admin/traders", label: "Traders", icon: "🤝" },
     ],
   },
   {
-    label: 'Catalog & Operations',
-    icon: '📦',
+    label: "Catalog & Operations",
+    icon: "📦",
     children: [
-      { href: '/admin/products', label: 'Products', icon: '📋' },
-      { href: '/admin/orders', label: 'Orders', icon: '🛒' },
+      { href: "/admin/products", label: "Products", icon: "📋" },
+      { href: "/admin/orders", label: "Orders", icon: "🛒" },
     ],
   },
   {
-    label: 'Catalog',
-    icon: '🎴',
+    label: "Catalog",
+    icon: "🎴",
+    children: [{ href: "/admin/catalog", label: "Catalog Viewer", icon: "👁️" }],
+  },
+  {
+    label: "Collectr",
+    icon: "🧭",
     children: [
-      { href: '/admin/catalog', label: 'Catalog Viewer', icon: '👁️' },
+      {
+        href: "/admin/collectr/import-brands",
+        label: "Import Brands",
+        icon: "🏷️",
+      },
+      {
+        href: "/admin/collectr/import-cards",
+        label: "Import Cards",
+        icon: "🃏",
+      },
     ],
   },
   {
-    label: 'Shiny Import',
-    icon: '📥',
+    label: "Shiny",
+    icon: "📥",
     children: [
-      { href: '/admin/import/cards', label: 'Import Cards', icon: '💾' },
-      { href: '/admin/import/brands', label: 'Import Brands/Sets', icon: '🏷️' },
+      { href: "/admin/import/cards", label: "Import Cards", icon: "💾" },
+      { href: "/admin/import/brands", label: "Import Brands/Sets", icon: "🏷️" },
     ],
   },
-  { href: '/admin/analytics', label: 'Analytics', icon: '📈' },
+  { href: "/admin/analytics", label: "Analytics", icon: "📈" },
   {
-    label: 'Communications',
-    icon: '💬',
+    label: "Communications",
+    icon: "💬",
     children: [
-      { href: '/admin/newsletter', label: 'Newsletter', icon: '📧' },
-      { href: '/admin/support', label: 'Support', icon: '💭' },
+      { href: "/admin/newsletter", label: "Newsletter", icon: "📧" },
+      { href: "/admin/support", label: "Support", icon: "💭" },
     ],
   },
-  { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
+  { href: "/admin/settings", label: "Settings", icon: "⚙️" },
 ];
 
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
@@ -85,9 +99,7 @@ function AdminLayoutContent({ children }: { children: React.ReactNode }) {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-8">
-          {children}
-        </main>
+        <main className="flex-1 p-8">{children}</main>
       </div>
     </div>
   );
@@ -101,7 +113,8 @@ export default async function AdminLayout({
   const adminCheck = await isAdmin();
 
   if (!adminCheck) {
-    redirect('/login?error_type=unauthorized&returnUrl=/admin');
+    redirect("/login?error_type=unauthorized&returnUrl=/admin");
   }
 
-  return <AdminLayoutContent>{children}</AdminLayoutContent>;}
+  return <AdminLayoutContent>{children}</AdminLayoutContent>;
+}
