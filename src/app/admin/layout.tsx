@@ -31,7 +31,10 @@ const adminNavItems: NavItem[] = [
   {
     label: "Catalog",
     icon: "🎴",
-    children: [{ href: "/admin/catalog", label: "Catalog Viewer", icon: "👁️" }],
+    children: [
+      { href: "/admin/catalog", label: "Catalog Viewer", icon: "👁️" },
+      { href: "/admin/catalog/sync", label: "Catalog Sync", icon: "🔄" },
+    ],
   },
   {
     label: "Collectr",

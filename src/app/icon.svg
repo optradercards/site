@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ec2528"/>
+      <stop offset="1" stop-color="#eb646a"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="#1a1a1a"/>
+  <text x="16" y="23" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="18" fill="url(#g)">OP</text>
+</svg>
