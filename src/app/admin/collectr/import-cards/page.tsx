@@ -161,7 +161,7 @@ export default function CollectrImportCardsPage() {
 
           <div className="flex gap-3">
             <button
-              onClick={runSearch}
+              onClick={() => runSearch()}
               disabled={loading}
               className={`px-6 py-2 rounded-lg font-semibold transition-colors ${
                 loading

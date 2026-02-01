@@ -28,7 +28,7 @@ export default async function AdminTicketsPage() {
         .single();
       return {
         ...ticket,
-        customer_email: emailData?.email || null,
+        customer_email: (emailData as { email?: string })?.email || null,
       };
     })
   );

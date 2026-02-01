@@ -59,7 +59,7 @@ export default function TicketDetailPage() {
         .single();
 
       if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-      setCustomerEmail(data?.email || null);
+      setCustomerEmail((data as { email?: string })?.email || null);
     } catch (error) {
       console.error("Error loading customer email:", error);
     }

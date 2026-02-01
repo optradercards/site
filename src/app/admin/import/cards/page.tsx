@@ -76,13 +76,13 @@ export default function CardImportPage() {
   // Modal state
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [modalBrand, setModalBrand] = useState<string>("");
-  const [modalSelectedSets, setModalSelectedSets] = useState<Set<string>>(
-    new Set(),
+  const [modalSelectedSets, setModalSelectedSets] = useState(
+    new Set<string>(),
   );
 
   // Selection state
-  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
-    new Set(),
+  const [selectedProducts, setSelectedProducts] = useState(
+    new Set<string>(),
   );
 
   // Import state
