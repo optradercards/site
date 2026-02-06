@@ -1,6 +1,7 @@
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
 import AccountSetupModal from "@/components/AccountSetupModal";
+import TrustSignals from "@/components/TrustSignals";
 
 export default function AppGroupLayout({
   children,
@@ -12,6 +13,7 @@ export default function AppGroupLayout({
       <SiteHeader />
       <AccountSetupModal />
       <main className="flex-1">{children}</main>
+      <TrustSignals />
       <SiteFooter />
     </div>
   );
