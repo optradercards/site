@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { type AuthError } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/contexts/UserContext";
+import Turnstile from "@/components/Turnstile";
 
 type SignupFormData = {
   email: string;
@@ -31,6 +32,9 @@ export default function SignupClient() {
       lastName: "",
     },
   });
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const onCaptchaVerify = useCallback((token: string) => setCaptchaToken(token), []);
+  const onCaptchaExpire = useCallback(() => setCaptchaToken(null), []);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -62,6 +66,7 @@ export default function SignupClient() {
         options: {
           emailRedirectTo: redirectTo,
           shouldCreateUser: true,
+          captchaToken: captchaToken ?? undefined,
           data: {
             first_name: data.firstName.trim(),
             last_name: data.lastName.trim(),
@@ -243,9 +248,14 @@ export default function SignupClient() {
                   </div>
                 ) : null}
 
+                <Turnstile
+                  onVerify={onCaptchaVerify}
+                  onExpire={onCaptchaExpire}
+                />
+
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !captchaToken}
                   className="w-full px-4 py-3 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors font-semibold"
                 >
                   {isSubmitting ? "Please wait…" : "Email me a sign-up link"}
