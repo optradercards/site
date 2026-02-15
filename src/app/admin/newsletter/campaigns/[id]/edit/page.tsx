@@ -42,7 +42,8 @@ export default function EditCampaignPage() {
   const loadCampaign = async () => {
     try {
       const { data, error } = await supabase
-        .from("newsletter_campaigns")
+        .schema("newsletter")
+        .from("campaigns")
         .select("*")
         .eq("id", params.id)
         .single();
@@ -78,7 +79,8 @@ export default function EditCampaignPage() {
 
     try {
       const { error } = await supabase
-        .from("newsletter_campaigns")
+        .schema("newsletter")
+        .from("campaigns")
         .update({
           subject: formData.subject,
           from_name: formData.fromName,

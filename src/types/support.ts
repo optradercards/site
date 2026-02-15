@@ -12,7 +12,7 @@ export type TicketPriority = "low" | "medium" | "high" | "urgent";
 // Sender type for messages
 export type MessageSenderType = "admin" | "customer";
 
-// Support ticket type (from support_tickets table)
+// Support ticket type (from support.tickets table)
 export interface SupportTicket {
   id: string;
   account_id: string | null;
@@ -28,7 +28,7 @@ export interface SupportTicket {
   resolved_at: string | null;
 }
 
-// Support ticket view type (from support_tickets_view)
+// Support ticket view type (from support.tickets_view)
 export interface SupportTicketView extends SupportTicket {
   category_name: string | null;
   assigned_to_name: string | null;
@@ -39,7 +39,7 @@ export interface SupportTicketView extends SupportTicket {
   last_message_sender_type: MessageSenderType | null;
 }
 
-// Support message type (from support_messages table)
+// Support message type (from support.messages table)
 export interface SupportMessage {
   id: string;
   ticket_id: string;
@@ -50,7 +50,7 @@ export interface SupportMessage {
   created_at: string;
 }
 
-// Support message view type (from support_messages_view)
+// Support message view type (from support.messages_view)
 export interface SupportMessageView extends SupportMessage {
   sender_type: MessageSenderType;
   sender_email: string | null;

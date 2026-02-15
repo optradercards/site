@@ -37,22 +37,6 @@ const adminNavItems: NavItem[] = [
     ],
   },
   {
-    label: "Collectr",
-    icon: "🧭",
-    children: [
-      {
-        href: "/admin/collectr/import-brands",
-        label: "Import Brands",
-        icon: "🏷️",
-      },
-      {
-        href: "/admin/collectr/import-cards",
-        label: "Import Cards",
-        icon: "🃏",
-      },
-    ],
-  },
-  {
     label: "Shiny",
     icon: "📥",
     children: [

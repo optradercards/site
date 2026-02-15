@@ -20,7 +20,8 @@ export async function POST(request: Request) {
 
     // Get campaign details
     const { data: campaign, error: campaignError } = await supabase
-      .from('newsletter_campaigns')
+      .schema('newsletter')
+      .from('campaigns')
       .select('*')
       .eq('id', campaignId)
       .single();
@@ -53,7 +54,8 @@ export async function POST(request: Request) {
 
     // Get all subscribed users
     const { data: subscribers, error: subscribersError } = await supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('id, email, unsubscribe_token')
       .eq('status', 'subscribed');
 
@@ -63,7 +65,8 @@ export async function POST(request: Request) {
 
     // Update campaign status
     await supabase
-      .from('newsletter_campaigns')
+      .schema('newsletter')
+      .from('campaigns')
       .update({ 
         status: 'sending', 
         total_recipients: subscribers.length 
@@ -99,27 +102,33 @@ export async function POST(request: Request) {
           const [response] = await sgMail.send(msg);
           
           // Record successful send
-          await supabase.from('newsletter_campaign_sends').insert({
-            campaign_id: campaignId,
-            subscriber_id: subscriber.id,
-            email: subscriber.email,
-            status: 'sent',
-            sendgrid_message_id: response.headers['x-message-id'],
-            sent_at: new Date().toISOString(),
-          });
+          await supabase
+            .schema('newsletter')
+            .from('campaign_sends')
+            .insert({
+              campaign_id: campaignId,
+              subscriber_id: subscriber.id,
+              email: subscriber.email,
+              status: 'sent',
+              sendgrid_message_id: response.headers['x-message-id'],
+              sent_at: new Date().toISOString(),
+            });
 
           successCount++;
         } catch (error: any) {
           console.error(`Failed to send to ${subscriber.email}:`, error);
           
           // Record failed send
-          await supabase.from('newsletter_campaign_sends').insert({
-            campaign_id: campaignId,
-            subscriber_id: subscriber.id,
-            email: subscriber.email,
-            status: 'failed',
-            error_message: error.message,
-          });
+          await supabase
+            .schema('newsletter')
+            .from('campaign_sends')
+            .insert({
+              campaign_id: campaignId,
+              subscriber_id: subscriber.id,
+              email: subscriber.email,
+              status: 'failed',
+              error_message: error.message,
+            });
 
           failCount++;
         }
@@ -130,7 +139,8 @@ export async function POST(request: Request) {
 
     // Update campaign with final stats
     await supabase
-      .from('newsletter_campaigns')
+      .schema('newsletter')
+      .from('campaigns')
       .update({ 
         status: 'sent',
         sent_at: new Date().toISOString(),

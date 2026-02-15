@@ -100,9 +100,9 @@ export default function CardImportPage() {
 
     try {
       const [brandsRes, groupsRes, setsRes] = await Promise.all([
-        supabase.from("trading_card_brands").select("*").order("name"),
-        supabase.from("trading_card_groups").select("*").order("name"),
-        supabase.from("trading_card_sets").select("*").order("name"),
+        supabase.schema("cards").from("brands").select("*").order("name"),
+        supabase.schema("cards").from("groups").select("*").order("name"),
+        supabase.schema("cards").from("sets").select("*").order("name"),
       ]);
 
       if (brandsRes.error) throw brandsRes.error;

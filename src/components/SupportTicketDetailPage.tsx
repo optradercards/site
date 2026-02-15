@@ -74,7 +74,8 @@ export default function SupportTicketDetailPage() {
 
       // Fetch ticket details
       const { data: ticketData, error: ticketError } = await supabase
-        .from("support_tickets")
+        .schema("support")
+        .from("tickets")
         .select(
           `
           id,
@@ -85,7 +86,7 @@ export default function SupportTicketDetailPage() {
           created_at,
           updated_at,
           account_id,
-          support_categories (
+          categories (
             name
           )
         `
@@ -109,12 +110,13 @@ export default function SupportTicketDetailPage() {
         priority: ticketData.priority,
         created_at: ticketData.created_at,
         updated_at: ticketData.updated_at,
-        category_name: (ticketData.support_categories as any)?.name || null,
+        category_name: (ticketData.categories as any)?.name || null,
       });
 
       // Fetch messages/replies
       const { data: messagesData, error: messagesError } = await supabase
-        .from("support_messages")
+        .schema("support")
+        .from("messages")
         .select(
           `
           id,

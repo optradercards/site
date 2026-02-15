@@ -40,7 +40,8 @@ export default function CampaignDetailPage() {
   const loadCampaign = async () => {
     try {
       const { data, error } = await supabase
-        .from('newsletter_campaigns')
+        .schema('newsletter')
+        .from('campaigns')
         .select('*')
         .eq('id', params.id)
         .single();
@@ -58,7 +59,8 @@ export default function CampaignDetailPage() {
   const loadSubscriberCount = async () => {
     try {
       const { count } = await supabase
-        .from('newsletter_subscribers')
+        .schema('newsletter')
+        .from('subscribers')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'subscribed');
 

@@ -76,7 +76,8 @@ export default function SupportSettingsPage() {
   const fetchCategories = async () => {
     try {
       const { data: categoriesData, error: categoriesError } = await supabase
-        .from("support_categories")
+        .schema("support")
+        .from("categories")
         .select("*")
         .order("name");
 
@@ -92,7 +93,8 @@ export default function SupportSettingsPage() {
       setLoading(true);
 
       const { data: ticketsData, error: ticketsError } = await supabase
-        .from("support_tickets")
+        .schema("support")
+        .from("tickets")
         .select(
           `
           id,
@@ -101,7 +103,7 @@ export default function SupportSettingsPage() {
           priority,
           created_at,
           category_id,
-          support_categories (
+          categories (
             name
           )
         `
@@ -118,7 +120,7 @@ export default function SupportSettingsPage() {
           status: ticket.status,
           priority: ticket.priority,
           created_at: ticket.created_at,
-          category_name: ticket.support_categories?.name || null,
+          category_name: ticket.categories?.name || null,
         })) || [];
 
       setTickets(formattedTickets);

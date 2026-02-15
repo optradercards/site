@@ -29,7 +29,8 @@ export default function TicketDetailPage() {
   const loadTicket = async () => {
     try {
       const { data, error } = await supabase
-        .from("support_tickets_view")
+        .schema("support")
+        .from("tickets_view")
         .select("*")
         .eq("id", params.id)
         .single();
@@ -47,7 +48,8 @@ export default function TicketDetailPage() {
   const loadMessages = async () => {
     try {
       const { data, error } = await supabase
-        .from("support_messages_view")
+        .schema("support")
+        .from("messages_view")
         .select("*")
         .eq("ticket_id", params.id)
         .order("created_at", { ascending: true });

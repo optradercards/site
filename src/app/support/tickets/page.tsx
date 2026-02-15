@@ -26,7 +26,8 @@ export default async function UserTicketsPage() {
   }
 
   const { data: tickets } = await supabase
-    .from("support_tickets_view")
+    .schema("support")
+    .from("tickets_view")
     .select("*")
     .eq("account_id", account.id)
     .order("created_at", { ascending: false });

@@ -12,7 +12,8 @@ export default async function AdminTicketsPage() {
   const supabase = await createClient();
 
   const { data: tickets, error } = await supabase
-    .from("support_tickets_view")
+    .schema("support")
+    .from("tickets_view")
     .select("*")
     .order("created_at", { ascending: false });
 

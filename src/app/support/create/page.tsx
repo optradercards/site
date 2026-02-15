@@ -30,7 +30,8 @@ export default function CreateTicketPage() {
     const loadCategories = async () => {
       try {
         const { data, error } = await supabase
-          .from("support_categories")
+          .schema("support")
+          .from("categories")
           .select("*")
           .order("name");
 

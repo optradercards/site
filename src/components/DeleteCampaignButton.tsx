@@ -27,7 +27,8 @@ export default function DeleteCampaignButton({
     setIsDeleting(true);
     try {
       const { error } = await supabase
-        .from('newsletter_campaigns')
+        .schema('newsletter')
+        .from('campaigns')
         .delete()
         .eq('id', campaignId);
 

@@ -34,7 +34,8 @@ export default function CreateCampaignPage() {
       const { data: { user } } = await supabase.auth.getUser();
       
       const { data, error } = await supabase
-        .from('newsletter_campaigns')
+        .schema('newsletter')
+        .from('campaigns')
         .insert({
           subject: formData.subject,
           from_name: formData.fromName,
@@ -71,7 +72,8 @@ export default function CreateCampaignPage() {
       
       // Create a temporary campaign for testing
       const { data: campaign, error: campaignError } = await supabase
-        .from('newsletter_campaigns')
+        .schema('newsletter')
+        .from('campaigns')
         .insert({
           subject: formData.subject,
           from_name: formData.fromName,

@@ -13,7 +13,8 @@ export default async function CampaignsPage() {
   const supabase = await createClient();
 
   const { data: campaigns } = await supabase
-    .from('newsletter_campaigns')
+    .schema('newsletter')
+    .from('campaigns')
     .select('*')
     .order('created_at', { ascending: false });
 

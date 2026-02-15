@@ -1,4 +1,4 @@
-// Newsletter types extracted from database schema
+// Newsletter types extracted from database newsletter schema
 
 export type SubscriberStatus =
   | "subscribed"

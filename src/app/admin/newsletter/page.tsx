@@ -15,23 +15,28 @@ export default async function NewsletterPage() {
   // Fetch subscriber stats
   const [subscribedCount, unsubscribedCount, bouncedCount, complainedCount, eventsData] = await Promise.all([
     supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'subscribed'),
     supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'unsubscribed'),
     supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'bounced'),
     supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'complained'),
     supabase
-      .from('newsletter_events')
+      .schema('newsletter')
+      .from('events')
       .select('*')
       .order('received_at', { ascending: false })
       .limit(20),
@@ -39,7 +44,8 @@ export default async function NewsletterPage() {
 
   // Fetch recent subscribers
   const { data: recentSubscribers } = await supabase
-    .from('newsletter_subscribers')
+    .schema('newsletter')
+    .from('subscribers')
     .select('*')
     .eq('status', 'subscribed')
     .order('subscribed_at', { ascending: false })

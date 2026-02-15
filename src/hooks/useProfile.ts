@@ -54,6 +54,7 @@ export function useProfile() {
       }
 
       const { data: addressesData } = await supabase
+        .schema("contacts")
         .from("addresses")
         .select("*")
         .eq("account_id", accountData.account_id);
@@ -155,7 +156,7 @@ export function useAddAddress() {
       country: string;
       isDefault: boolean;
     }) => {
-      const { error } = await supabase.from("addresses").insert({
+      const { error } = await supabase.schema("contacts").from("addresses").insert({
         account_id: data.accountId,
         address_type: data.addressType,
         street_address: data.streetAddress.trim(),
@@ -191,6 +192,7 @@ export function useUpdateAddress() {
       isDefault: boolean;
     }) => {
       const { error } = await supabase
+        .schema("contacts")
         .from("addresses")
         .update({
           address_type: data.addressType,
@@ -219,6 +221,7 @@ export function useDeleteAddress() {
   return useMutation({
     mutationFn: async (addressId: string) => {
       const { error } = await supabase
+        .schema("contacts")
         .from("addresses")
         .delete()
         .eq("id", addressId);

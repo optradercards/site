@@ -24,7 +24,8 @@ export async function GET(request: Request) {
 
     // Fetch subscribers based on filter
     let query = supabase
-      .from('newsletter_subscribers')
+      .schema('newsletter')
+      .from('subscribers')
       .select('email, status, subscribed_at, unsubscribed_at, created_at')
       .order('created_at', { ascending: false });
 
