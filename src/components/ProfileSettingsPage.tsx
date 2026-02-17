@@ -6,7 +6,6 @@ import { useForm } from "react-hook-form";
 import { useUser } from "@/contexts/UserContext";
 import {
   useProfile,
-  useUpdateProfile,
   useUploadAvatar,
 } from "@/hooks/useProfile";
 import Image from "next/image";
@@ -33,7 +32,6 @@ export default function ProfileSettingsPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const { data: profileData, isLoading: loading } = useProfile();
-  const updateProfile = useUpdateProfile();
   const uploadAvatar = useUploadAvatar();
 
   const {
@@ -236,7 +234,7 @@ export default function ProfileSettingsPage() {
             placeholder="your-profile-url"
           />
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Your profile will be at: optrader.cards/
+            Your profile will be at: optrader.com.au/
             {profileSlug || "your-profile-url"}
           </p>
           <p className="text-xs text-gray-500 dark:text-gray-400">

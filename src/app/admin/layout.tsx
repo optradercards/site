@@ -12,12 +12,22 @@ interface NavItem {
 
 const adminNavItems: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: "📊" },
+  { href: "/admin/jobs", label: "Jobs", icon: "⚡" },
   {
-    label: "Team Management",
+    label: "General",
     icon: "👥",
     children: [
-      { href: "/admin/users", label: "Users", icon: "👤" },
+      { href: "/admin/admins", label: "Admins", icon: "👤" },
       { href: "/admin/traders", label: "Traders", icon: "🤝" },
+      { href: "/admin/settings", label: "Settings", icon: "⚙️" },
+    ],
+  },
+  {
+    label: "Communications",
+    icon: "💬",
+    children: [
+      { href: "/admin/newsletter", label: "Newsletter", icon: "📧" },
+      { href: "/admin/support", label: "Support", icon: "💭" },
     ],
   },
   {
@@ -40,48 +50,45 @@ const adminNavItems: NavItem[] = [
     label: "Shiny",
     icon: "📥",
     children: [
+      { href: "/admin/import/brands", label: "Import Brands", icon: "🏷️" },
       { href: "/admin/import/cards", label: "Import Cards", icon: "💾" },
-      { href: "/admin/import/brands", label: "Import Brands/Sets", icon: "🏷️" },
+      { href: "/admin/import/collections", label: "Import Collections", icon: "📦" },
+      { href: "/admin/import/accounts", label: "Import Accounts", icon: "👤" },
     ],
   },
-  { href: "/admin/analytics", label: "Analytics", icon: "📈" },
   {
-    label: "Communications",
-    icon: "💬",
+    label: "Analytics",
+    icon: "📈",
     children: [
-      { href: "/admin/newsletter", label: "Newsletter", icon: "📧" },
-      { href: "/admin/support", label: "Support", icon: "💭" },
+      { href: "/admin/analytics", label: "Analytics", icon: "📈" },
     ],
   },
-  { href: "/admin/settings", label: "Settings", icon: "⚙️" },
 ];
 
 function AdminLayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-gradient-to-r from-red-600 to-red-700 text-white py-6 px-4 shadow-lg">
-        <div className="container mx-auto flex items-center justify-between">
+      <div className="bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 shadow-lg">
+        <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-            <p className="text-red-100 mt-1">Manage your OP Trader platform</p>
+            <h1 className="text-lg font-bold">Admin Dashboard</h1>
+            <p className="text-red-100 text-xs">Manage your OP Trader platform</p>
           </div>
           <Link
             href="/"
-            className="px-4 py-2 bg-white text-red-600 hover:bg-gray-100 rounded-lg transition-colors text-sm font-semibold shadow-md"
+            className="px-3 py-1.5 bg-white text-red-600 hover:bg-gray-100 rounded-lg transition-colors text-xs font-semibold shadow-md"
           >
-            ← Back to Site
+            Back to Site
           </Link>
         </div>
       </div>
 
       <div className="flex">
         {/* Sidebar */}
-        <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen">
-          <nav className="p-4">
-            <ul className="space-y-1">
-              <NavMenu items={adminNavItems} />
-            </ul>
+        <aside className="w-56 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 min-h-screen shrink-0">
+          <nav className="p-3">
+            <NavMenu items={adminNavItems} />
           </nav>
         </aside>
 

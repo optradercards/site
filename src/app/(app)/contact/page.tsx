@@ -38,18 +38,6 @@ export default function ContactPage() {
               <div className="space-y-6">
                 <div>
                   <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-2">
-                    Email
-                  </h3>
-                  <a
-                    href="mailto:support@optrader.com"
-                    className="text-red-500 hover:text-red-600 transition-colors"
-                  >
-                    support@optrader.com
-                  </a>
-                </div>
-
-                <div>
-                  <h3 className="font-semibold text-gray-800 dark:text-gray-100 mb-2">
                     Response Time
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400">

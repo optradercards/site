@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import HomePageClient from "@/components/HomePageClient";
 import FeaturedCards from "@/components/FeaturedCards";
 import HeroSection from "@/components/HeroSection";
@@ -9,7 +11,15 @@ export const metadata: Metadata = {
     "Find, buy, trade, and collect trading cards. Australia's premier marketplace for Pokémon, One Piece, Yu-Gi-Oh!, and more TCG collectors.",
 };
 
-export default function Home() {
+export default async function Home() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (user) {
+    redirect("/app");
+  }
   return (
     <>
       {/* Hero Section */}

@@ -12,6 +12,7 @@ import {
   useUpdateAddress,
   useDeleteAddress,
 } from "@/hooks/useProfile";
+import Link from "next/link";
 import { useAddressAutocomplete } from "@/hooks/useAddressAutocomplete";
 import Image from "next/image";
 
@@ -352,7 +353,7 @@ export default function ProfileSettingsClient() {
                 placeholder="your-profile-url"
               />
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Your profile will be at: optrader.cards/
+                Your profile will be at: optrader.com.au/
                 {profileSlug || "your-profile-url"}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -371,6 +372,23 @@ export default function ProfileSettingsClient() {
                 {message}
               </div>
             )}
+
+            <hr className="border-gray-200 dark:border-gray-700 my-6" />
+
+            <div className="space-y-2">
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+                Linked Accounts
+              </h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Manage your connected Shiny and Collectr accounts.
+              </p>
+              <Link
+                href="/settings/linked-accounts"
+                className="inline-block text-sm font-medium text-red-500 hover:text-red-600 transition-colors"
+              >
+                Manage linked accounts &rarr;
+              </Link>
+            </div>
 
             <button
               type="submit"

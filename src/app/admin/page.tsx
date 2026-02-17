@@ -9,10 +9,10 @@ export const metadata: Metadata = {
 export default function AdminDashboard() {
   const adminSections = [
     {
-      title: "Users",
-      description: "Manage user accounts and permissions",
-      href: "/admin/users",
-      icon: "👥",
+      title: "Admins",
+      description: "Manage platform admins and permissions",
+      href: "/admin/admins",
+      icon: "👤",
     },
     {
       title: "Traders",
@@ -24,25 +24,43 @@ export default function AdminDashboard() {
       title: "Products",
       description: "Manage marketplace products and inventory",
       href: "/admin/products",
-      icon: "📦",
+      icon: "📋",
     },
     {
       title: "Orders",
       description: "View and manage all orders",
       href: "/admin/orders",
-      icon: "📋",
+      icon: "🛒",
+    },
+    {
+      title: "Newsletter",
+      description: "Manage newsletter campaigns",
+      href: "/admin/newsletter",
+      icon: "📧",
+    },
+    {
+      title: "Support",
+      description: "View and respond to support tickets",
+      href: "/admin/support",
+      icon: "💭",
+    },
+    {
+      title: "Catalog",
+      description: "Browse and sync the card catalog",
+      href: "/admin/catalog",
+      icon: "👁️",
+    },
+    {
+      title: "Analytics",
+      description: "View platform analytics and reports",
+      href: "/admin/analytics",
+      icon: "📈",
     },
     {
       title: "Settings",
       description: "Configure platform settings",
       href: "/admin/settings",
       icon: "⚙️",
-    },
-    {
-      title: "Analytics",
-      description: "View platform analytics and reports",
-      href: "/admin/analytics",
-      icon: "📊",
     },
   ];
 

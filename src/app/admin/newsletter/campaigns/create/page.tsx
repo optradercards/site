@@ -16,7 +16,7 @@ export default function CreateCampaignPage() {
   const [formData, setFormData] = useState({
     subject: '',
     fromName: 'OP Trader',
-    fromEmail: 'newsletter@optrader.cards',
+    fromEmail: 'newsletter@optrader.com.au',
     previewText: '',
     htmlContent: '',
   });

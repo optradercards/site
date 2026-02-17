@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/contexts/UserContext";
 import Image from "next/image";
@@ -22,6 +23,7 @@ const generateSlug = (name: string): string => {
 export default function AccountSetupModal() {
   const supabase = createClient();
   const { user } = useUser();
+  const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<"intro" | "setup">("intro");
@@ -166,6 +168,9 @@ export default function AccountSetupModal() {
 
         if (profileError) throw profileError;
       }
+
+      // Refresh cached profile data so header/UI updates immediately
+      queryClient.invalidateQueries({ queryKey: ["profile", user?.id] });
 
       // Close modal on success
       setShowModal(false);
@@ -321,7 +326,7 @@ export default function AccountSetupModal() {
                 Profile URL
               </label>
               <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
-                <span>optrader.cards/</span>
+                <span>optrader.com.au/</span>
                 <input
                   id="slug"
                   type="text"

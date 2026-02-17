@@ -19,9 +19,16 @@ interface ShinyGroup {
   lo?: string;
 }
 
+interface ShinySetList {
+  id: string;
+  na: string;
+  br: string;
+}
+
 interface BrandsSectionProps {
   brands: ShinyBrand[];
   sets: ShinySet[];
+  setLists: ShinySetList[];
   groups: ShinyGroup[];
   selectedBrands: Set<string>;
   onToggleBrand: (brandId: string) => void;
@@ -32,6 +39,7 @@ interface BrandsSectionProps {
 export function BrandsSection({
   brands,
   sets,
+  setLists,
   groups,
   selectedBrands,
   onToggleBrand,
@@ -76,14 +84,16 @@ export function BrandsSection({
         <div className="flex flex-wrap gap-4">
           {brands.map((brand) => {
             const isSelected = selectedBrands.has(brand.id);
+            const setListsCount = setLists.filter(sl => sl.br === brand.id).length;
             const setsCount = sets.filter(s => s.br === brand.id).length;
             const groupsCount = groups.filter(g => g.br === brand.id).length;
-            
+
             return (
               <BrandCard
                 key={brand.id}
                 brand={brand}
                 isSelected={isSelected}
+                setListsCount={setListsCount}
                 setsCount={setsCount}
                 groupsCount={groupsCount}
                 onClick={() => onToggleBrand(brand.id)}
@@ -98,7 +108,7 @@ export function BrandsSection({
   );
 }
 
-function BrandCard({ brand, isSelected, setsCount, groupsCount, onClick }: any) {
+function BrandCard({ brand, isSelected, setListsCount, setsCount, groupsCount, onClick }: any) {
   return (
     <button
       onClick={onClick}
@@ -130,12 +140,15 @@ function BrandCard({ brand, isSelected, setsCount, groupsCount, onClick }: any) 
       
       <div className="text-center">
         <p className="text-white font-bold text-base mb-1">{brand.na}</p>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded-full font-medium">
-            {setsCount} sets
+        <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs">
+          <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded-full font-medium">
+            {setListsCount} set lists
           </span>
           <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded-full font-medium">
             {groupsCount} groups
+          </span>
+          <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded-full font-medium">
+            {setsCount} sets
           </span>
         </div>
       </div>

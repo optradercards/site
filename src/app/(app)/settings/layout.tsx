@@ -12,8 +12,9 @@ const settingsLinks = [
   },
   { href: "/settings/addresses", label: "Addresses", icon: "📍" },
   { href: "/settings/support", label: "Support", icon: "🎧" },
+  { href: "/settings/linked-accounts", label: "Linked Accounts", icon: "🔗" },
   { href: "/settings/security", label: "Security", icon: "🔒" },
-  { href: "/settings/import", label: "Import Collection", icon: "📥" },
+  { href: "/settings/import-history", label: "Import History", icon: "📥" },
 ];
 
 export default function SettingsLayout({

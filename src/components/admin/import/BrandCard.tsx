@@ -10,12 +10,13 @@ interface ShinyBrand {
 interface BrandCardProps {
   brand: ShinyBrand;
   isSelected: boolean;
+  setListsCount: number;
   setsCount: number;
   groupsCount: number;
   onClick: () => void;
 }
 
-export function BrandCard({ brand, isSelected, setsCount, groupsCount, onClick }: BrandCardProps) {
+export function BrandCard({ brand, isSelected, setListsCount, setsCount, groupsCount, onClick }: BrandCardProps) {
   return (
     <button
       onClick={onClick}
@@ -47,12 +48,15 @@ export function BrandCard({ brand, isSelected, setsCount, groupsCount, onClick }
       
       <div className="text-center">
         <p className="text-white font-bold text-base mb-1">{brand.na}</p>
-        <div className="flex items-center gap-2 text-xs">
-          <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded-full font-medium">
-            {setsCount} sets
+        <div className="flex flex-wrap items-center justify-center gap-1.5 text-xs">
+          <span className="px-2 py-1 bg-amber-500/20 text-amber-300 rounded-full font-medium">
+            {setListsCount} set lists
           </span>
           <span className="px-2 py-1 bg-purple-500/20 text-purple-300 rounded-full font-medium">
             {groupsCount} groups
+          </span>
+          <span className="px-2 py-1 bg-blue-500/20 text-blue-300 rounded-full font-medium">
+            {setsCount} sets
           </span>
         </div>
       </div>

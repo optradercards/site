@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/contexts/UserContext";
+import type { LinkedAccount } from "@/types/profile";
 
 type ProfileData = {
   account_id: string;
@@ -9,6 +10,7 @@ type ProfileData = {
   full_name: string | null;
   avatar_url: string | null;
   phone_number: string | null;
+  linked_accounts: LinkedAccount[];
 };
 
 type AccountData = {
@@ -97,6 +99,91 @@ export function useUpdateProfile() {
       if (error) throw error;
 
       return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile", user?.id] });
+    },
+  });
+}
+
+export function useLinkAccount() {
+  const queryClient = useQueryClient();
+  const { user } = useUser();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (data: {
+      accountId: string;
+      entry: LinkedAccount;
+    }) => {
+      // Fetch current linked_accounts
+      const { data: profile, error: fetchError } = await supabase
+        .from("profiles")
+        .select("linked_accounts")
+        .eq("account_id", data.accountId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const current: LinkedAccount[] = profile.linked_accounts ?? [];
+
+      // Duplicate check
+      const exists = current.some(
+        (a) => a.type === data.entry.type && a.handle === data.entry.handle
+      );
+      if (exists) {
+        throw new Error("This account is already linked");
+      }
+
+      const updated = [...current, data.entry];
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ linked_accounts: updated })
+        .eq("account_id", data.accountId);
+
+      if (error) throw error;
+
+      return updated;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["profile", user?.id] });
+    },
+  });
+}
+
+export function useUnlinkAccount() {
+  const queryClient = useQueryClient();
+  const { user } = useUser();
+  const supabase = createClient();
+
+  return useMutation({
+    mutationFn: async (data: {
+      accountId: string;
+      entry: LinkedAccount;
+    }) => {
+      // Fetch current linked_accounts
+      const { data: profile, error: fetchError } = await supabase
+        .from("profiles")
+        .select("linked_accounts")
+        .eq("account_id", data.accountId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      const current: LinkedAccount[] = profile.linked_accounts ?? [];
+      const updated = current.filter(
+        (a) => !(a.type === data.entry.type && a.handle === data.entry.handle)
+      );
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({ linked_accounts: updated })
+        .eq("account_id", data.accountId);
+
+      if (error) throw error;
+
+      return updated;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["profile", user?.id] });

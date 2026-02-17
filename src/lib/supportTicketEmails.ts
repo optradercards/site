@@ -26,10 +26,10 @@ export async function sendTicketCreatedEmail(
     await sgMail.send({
       to: email,
       from: {
-        email: "support@help.optrader.cards",
+        email: "support@help.optrader.com.au",
         name: "OP Trader Support",
       },
-      replyTo: "support@help.optrader.cards",
+      replyTo: "support@help.optrader.com.au",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -78,10 +78,10 @@ export async function sendTicketResponseEmail(
     await sgMail.send({
       to: email,
       from: {
-        email: "support@help.optrader.cards",
+        email: "support@help.optrader.com.au",
         name: "OP Trader Support",
       },
-      replyTo: "support@help.optrader.cards",
+      replyTo: "support@help.optrader.com.au",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -128,10 +128,10 @@ export async function sendTicketResolvedEmail(
     await sgMail.send({
       to: email,
       from: {
-        email: "support@help.optrader.cards",
+        email: "support@help.optrader.com.au",
         name: "OP Trader Support",
       },
-      replyTo: "support@help.optrader.cards",
+      replyTo: "support@help.optrader.com.au",
       subject: `[Ticket #${ticketId}] ${subject}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

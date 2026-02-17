@@ -1,5 +1,6 @@
 interface ImportStats {
   brands_imported: number;
+  set_lists_imported?: number;
   sets_imported: number;
   groups_imported?: number;
   errors: string[];
@@ -18,10 +19,11 @@ export function ImportSuccess({ stats }: ImportSuccessProps) {
         </div>
         <p className="text-green-100 font-bold text-xl">Import Successful!</p>
       </div>
-      <div className="grid grid-cols-3 gap-6 ml-15">
+      <div className="grid grid-cols-4 gap-6 ml-15">
         <StatCard label="Brands" value={stats.brands_imported} />
-        <StatCard label="Sets" value={stats.sets_imported} />
+        <StatCard label="Set Lists" value={stats.set_lists_imported || 0} />
         <StatCard label="Groups" value={stats.groups_imported || 0} />
+        <StatCard label="Sets" value={stats.sets_imported} />
       </div>
       {stats.errors.length > 0 && (
         <div className="mt-4 ml-15 p-4 bg-red-950/50 rounded-xl border border-red-800/50">

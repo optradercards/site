@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useJob } from "@/hooks/useJob";
 
 interface Brand {
   id: string;
@@ -46,13 +47,6 @@ interface SearchResult {
   items: ShinyProduct[];
 }
 
-interface ImportStats {
-  brands_imported: number;
-  sets_imported: number;
-  products_imported: number;
-  errors: string[];
-}
-
 export default function CardImportPage() {
   const supabase = createClient();
 
@@ -86,9 +80,9 @@ export default function CardImportPage() {
   );
 
   // Import state
-  const [importing, setImporting] = useState(false);
-  const [importStats, setImportStats] = useState<ImportStats | null>(null);
+  const { createJob, status: jobStatus, stats: jobStats, error: jobError } = useJob();
   const [importError, setImportError] = useState<string | null>(null);
+  const importing = jobStatus === 'pending' || jobStatus === 'running';
 
   useEffect(() => {
     loadData();
@@ -171,7 +165,7 @@ export default function CardImportPage() {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
       const response = await fetch(
-        `${supabaseUrl}/functions/v1/shiny-fetch-search?${queryParams.toString()}`,
+        `${supabaseUrl}/functions/v1/shiny-fetch-cards?${queryParams.toString()}`,
         {
           method: "GET",
           headers: {
@@ -231,34 +225,16 @@ export default function CardImportPage() {
       return;
     }
 
-    setImporting(true);
     setImportError(null);
-    setImportStats(null);
 
     try {
-      // Just send the product IDs - the import function will fetch full details
       const productIds = Array.from(selectedProducts);
-
-      const { data, error } = await supabase.functions.invoke(
-        "shiny-import-cards",
-        {
-          body: { productIds },
-        },
-      );
-
-      if (error) {
-        setImportError(error.message || "Import failed");
-      } else if (data.success) {
-        setImportStats(data.stats);
-        // Clear selection after successful import
-        setSelectedProducts(new Set());
-      } else {
-        setImportError(data.error || "Import failed");
-      }
+      await createJob("shiny-cards", `${selectedProducts.size} cards`, {
+        productIds,
+      });
+      setSelectedProducts(new Set());
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "An error occurred");
-    } finally {
-      setImporting(false);
+      setImportError(err instanceof Error ? err.message : "Failed to start import");
     }
   };
 
@@ -413,10 +389,10 @@ export default function CardImportPage() {
               </div>
             </div>
 
-            {importStats && (
+            {jobStatus === 'completed' && (
               <div className="bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-xl p-6">
                 <p className="text-green-800 dark:text-green-100 font-semibold mb-3">
-                  ✓ Import Successful
+                  Import Successful
                 </p>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
@@ -424,7 +400,7 @@ export default function CardImportPage() {
                       Brands:
                     </span>{" "}
                     <span className="text-gray-900 dark:text-white font-semibold">
-                      {importStats.brands_imported}
+                      {jobStats.brands_imported ?? 0}
                     </span>
                   </div>
                   <div>
@@ -432,7 +408,7 @@ export default function CardImportPage() {
                       Sets:
                     </span>{" "}
                     <span className="text-gray-900 dark:text-white font-semibold">
-                      {importStats.sets_imported}
+                      {jobStats.sets_imported ?? 0}
                     </span>
                   </div>
                   <div>
@@ -440,16 +416,16 @@ export default function CardImportPage() {
                       Products:
                     </span>{" "}
                     <span className="text-gray-900 dark:text-white font-semibold">
-                      {importStats.products_imported}
+                      {jobStats.products_imported ?? 0}
                     </span>
                   </div>
                 </div>
               </div>
             )}
 
-            {importError && (
+            {(importError || (jobStatus === 'failed' && jobError)) && (
               <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700 rounded-xl p-4">
-                <p className="text-red-800 dark:text-red-200">{importError}</p>
+                <p className="text-red-800 dark:text-red-200">{importError || jobError}</p>
               </div>
             )}
 
