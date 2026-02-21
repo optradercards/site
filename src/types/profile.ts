@@ -1,11 +1,6 @@
 // Linked account types
 export type LinkedAccountType = "shiny" | "collectr";
 
-export interface LinkedAccount {
-  type: LinkedAccountType;
-  handle: string;
-}
-
 // User profile types
 export interface Profile {
   account_id: string;
@@ -13,7 +8,18 @@ export interface Profile {
   last_name: string | null;
   full_name: string | null;
   avatar_url: string | null;
-  linked_accounts: LinkedAccount[];
+  default_currency: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Linked account row from public.linked_accounts table
+export interface LinkedAccountRow {
+  id: string;
+  account_id: string;
+  platform: LinkedAccountType;
+  platform_account_id: string | null;
+  handle: string;
   created_at: string;
   updated_at: string;
 }
@@ -29,5 +35,5 @@ export interface UpdateProfileData {
   first_name?: string;
   last_name?: string;
   avatar_url?: string;
-  linked_accounts?: LinkedAccount[];
+  default_currency?: string;
 }

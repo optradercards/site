@@ -21,12 +21,6 @@ export default function AdminDashboard() {
       icon: "🤝",
     },
     {
-      title: "Products",
-      description: "Manage marketplace products and inventory",
-      href: "/admin/products",
-      icon: "📋",
-    },
-    {
       title: "Orders",
       description: "View and manage all orders",
       href: "/admin/orders",
@@ -43,12 +37,6 @@ export default function AdminDashboard() {
       description: "View and respond to support tickets",
       href: "/admin/support",
       icon: "💭",
-    },
-    {
-      title: "Catalog",
-      description: "Browse and sync the card catalog",
-      href: "/admin/catalog",
-      icon: "👁️",
     },
     {
       title: "Analytics",

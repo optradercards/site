@@ -4,8 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/contexts/UserContext";
-import { useProfile, useLinkAccount, useUnlinkAccount } from "@/hooks/useProfile";
+import { useLinkedAccounts, useLinkAccount, useUnlinkAccount } from "@/hooks/useLinkedAccounts";
 import { useImportAccount, type ImportResult } from "@/hooks/useImportAccount";
+import { useAccounts } from "@/contexts/AccountContext";
 import type { LinkedAccountType } from "@/types/profile";
 
 /**
@@ -43,7 +44,9 @@ const PLATFORM_LABELS: Record<LinkedAccountType, string> = {
 export default function LinkedAccountsPage() {
   const router = useRouter();
   const { user } = useUser();
-  const { data: profileData, isLoading: loading } = useProfile();
+  const { activeAccountId, activeAccount } = useAccounts();
+  const slug = activeAccount?.slug;
+  const { data: linkedAccounts, isLoading: loading } = useLinkedAccounts(activeAccountId);
   const linkAccount = useLinkAccount();
   const unlinkAccount = useUnlinkAccount();
   const importAccount = useImportAccount();
@@ -53,7 +56,7 @@ export default function LinkedAccountsPage() {
   const [handleInput, setHandleInput] = useState("");
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [wizardError, setWizardError] = useState<string | null>(null);
-  const [reimporting, setReimporting] = useState<string | null>(null); // "type:handle" key
+  const [reimporting, setReimporting] = useState<string | null>(null); // "platform:handle" key
 
   if (!user) {
     router.push("/login");
@@ -71,8 +74,7 @@ export default function LinkedAccountsPage() {
     );
   }
 
-  const linkedAccounts = profileData?.profile?.linked_accounts ?? [];
-  const accountId = profileData?.account.account_id;
+  const accounts = linkedAccounts ?? [];
 
   function resetWizard() {
     setWizardStep("closed");
@@ -95,7 +97,7 @@ export default function LinkedAccountsPage() {
   }
 
   async function handleSubmitHandle() {
-    if (!selectedPlatform || !accountId) return;
+    if (!selectedPlatform || !activeAccountId) return;
 
     const handle = normalizeHandle(handleInput);
     if (!handle) {
@@ -109,15 +111,16 @@ export default function LinkedAccountsPage() {
     try {
       // 1. Link the account
       await linkAccount.mutateAsync({
-        accountId,
-        entry: { type: selectedPlatform, handle },
+        accountId: activeAccountId,
+        platform: selectedPlatform,
+        handle,
       });
 
       // 2. Import collection
       const result = await importAccount.mutateAsync({
         platform: selectedPlatform,
         handle,
-        accountId,
+        accountId: activeAccountId,
       });
 
       setImportResult(result);
@@ -129,23 +132,20 @@ export default function LinkedAccountsPage() {
     }
   }
 
-  async function handleReimport(type: LinkedAccountType, handle: string) {
-    if (!accountId) return;
-    const key = `${type}:${handle}`;
+  async function handleReimport(platform: LinkedAccountType, handle: string) {
+    if (!activeAccountId) return;
+    const key = `${platform}:${handle}`;
     setReimporting(key);
     try {
-      await importAccount.mutateAsync({ platform: type, handle, accountId });
+      await importAccount.mutateAsync({ platform, handle, accountId: activeAccountId });
     } finally {
       setReimporting(null);
     }
   }
 
-  async function handleRemove(type: LinkedAccountType, handle: string) {
-    if (!accountId) return;
-    await unlinkAccount.mutateAsync({
-      accountId,
-      entry: { type, handle },
-    });
+  async function handleRemove(id: string) {
+    if (!activeAccountId) return;
+    await unlinkAccount.mutateAsync({ accountId: activeAccountId, id });
   }
 
   return (
@@ -161,7 +161,7 @@ export default function LinkedAccountsPage() {
         </div>
         <div className="flex items-center gap-3">
           <Link
-            href="/settings/import-history"
+            href={`/${slug}/settings/import-history`}
             className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-semibold text-sm"
           >
             Import History
@@ -179,20 +179,20 @@ export default function LinkedAccountsPage() {
       <hr className="border-gray-200 dark:border-gray-700" />
 
       {/* Existing linked accounts */}
-      {linkedAccounts.length === 0 ? (
+      {accounts.length === 0 ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">
           No linked accounts yet. Click "Link Account" to get started.
         </p>
       ) : (
         <div className="space-y-3">
-          {linkedAccounts.map((account, index) => (
+          {accounts.map((account) => (
             <div
-              key={`${account.type}-${account.handle}-${index}`}
+              key={account.id}
               className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-700 rounded-lg"
             >
               <div className="flex items-center gap-3">
                 <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
-                  {PLATFORM_LABELS[account.type]}
+                  {PLATFORM_LABELS[account.platform]}
                 </span>
                 <span className="text-sm text-gray-900 dark:text-gray-100 font-mono">
                   {account.handle}
@@ -201,15 +201,15 @@ export default function LinkedAccountsPage() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleReimport(account.type, account.handle)}
+                  onClick={() => handleReimport(account.platform, account.handle)}
                   disabled={reimporting !== null}
                   className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
                 >
-                  {reimporting === `${account.type}:${account.handle}` ? "Importing…" : "Re-import"}
+                  {reimporting === `${account.platform}:${account.handle}` ? "Importing…" : "Re-import"}
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleRemove(account.type, account.handle)}
+                  onClick={() => handleRemove(account.id)}
                   disabled={unlinkAccount.isPending}
                   className="px-3 py-1.5 text-sm text-red-600 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors disabled:opacity-50"
                 >

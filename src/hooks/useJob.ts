@@ -29,6 +29,7 @@ export function useJob() {
 
   const createJob = useCallback(
     async (
+      accountId: string,
       platform: string,
       handle: string,
       payload: Record<string, unknown>,
@@ -37,15 +38,10 @@ export function useJob() {
       // Clean up any previous subscription
       cleanup();
 
-      const { data: acct } = await supabase.rpc("get_personal_account");
-      if (!acct?.account_id) {
-        throw new Error("No account found");
-      }
-
       const { data: row, error } = await supabase
-        .from("job_logs")
+        .schema("jobs").from("job_logs")
         .insert({
-          account_id: acct.account_id,
+          account_id: accountId,
           platform,
           handle,
           status: "pending",
@@ -73,7 +69,7 @@ export function useJob() {
           "postgres_changes",
           {
             event: "UPDATE",
-            schema: "public",
+            schema: "jobs",
             table: "job_logs",
             filter: `id=eq.${jobId}`,
           },

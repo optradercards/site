@@ -24,6 +24,7 @@ export function useJobLogs() {
     queryKey: ["job-logs"],
     queryFn: async () => {
       const { data, error } = await supabase
+        .schema("jobs")
         .from("job_logs")
         .select("*")
         .order("started_at", { ascending: false })

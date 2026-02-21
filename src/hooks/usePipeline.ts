@@ -42,13 +42,8 @@ export function usePipeline() {
   }, [cleanup]);
 
   const createPipeline = useCallback(
-    async (steps: PipelineStep[]) => {
+    async (accountId: string, steps: PipelineStep[]) => {
       cleanup();
-
-      const { data: acct } = await supabase.rpc("get_personal_account");
-      if (!acct?.account_id) {
-        throw new Error("No account found");
-      }
 
       const dagId = crypto.randomUUID();
       dagIdRef.current = dagId;
@@ -67,9 +62,9 @@ export function usePipeline() {
         });
 
         const { data: row, error } = await supabase
-          .from("job_logs")
+          .schema("jobs").from("job_logs")
           .insert({
-            account_id: acct.account_id,
+            account_id: accountId,
             platform: step.platform,
             handle: step.handle,
             status: "pending",
@@ -102,7 +97,7 @@ export function usePipeline() {
           "postgres_changes",
           {
             event: "UPDATE",
-            schema: "public",
+            schema: "jobs",
             table: "job_logs",
             filter: `dag_id=eq.${dagId}`,
           },

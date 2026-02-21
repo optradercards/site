@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { useUser } from "@/contexts/UserContext";
-import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
+import { useProfile, useUpdateProfile, useUpdateCurrency } from "@/hooks/useProfile";
+import { SUPPORTED_CURRENCIES } from "@/lib/currency";
 
 type PersonalInfoFormData = {
   firstName: string;
@@ -20,6 +21,7 @@ export default function PersonalInformationSettingsPage() {
 
   const { data: profileData, isLoading: loading } = useProfile();
   const updateProfile = useUpdateProfile();
+  const updateCurrency = useUpdateCurrency();
 
   const {
     register,
@@ -165,6 +167,36 @@ export default function PersonalInformationSettingsPage() {
           />
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Optional - Used for order and delivery notifications
+          </p>
+        </div>
+
+        <div className="space-y-1">
+          <label
+            className="block text-sm font-medium text-gray-700 dark:text-gray-200"
+            htmlFor="currency"
+          >
+            Default currency
+          </label>
+          <select
+            id="currency"
+            value={profileData?.profile?.default_currency ?? "USD"}
+            onChange={(e) => {
+              if (!profileData?.account.account_id) return;
+              updateCurrency.mutate({
+                accountId: profileData.account.account_id,
+                currency: e.target.value,
+              });
+            }}
+            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100"
+          >
+            {SUPPORTED_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Prices will be displayed in this currency
           </p>
         </div>
 

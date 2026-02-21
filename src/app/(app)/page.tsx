@@ -18,7 +18,10 @@ export default async function Home() {
   } = await supabase.auth.getUser();
 
   if (user) {
-    redirect("/app");
+    const { data: accounts } = await supabase.rpc("get_accounts");
+    const personal = accounts?.find((a: any) => a.personal_account);
+    const slug = personal?.slug || personal?.account_id;
+    redirect(slug ? `/${slug}` : "/settings/profile");
   }
   return (
     <>

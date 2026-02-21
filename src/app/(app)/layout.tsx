@@ -1,6 +1,5 @@
 import SiteFooter from "@/components/SiteFooter";
 import SiteHeader from "@/components/SiteHeader";
-import AccountSetupModal from "@/components/AccountSetupModal";
 import TrustSignals from "@/components/TrustSignals";
 
 export default function AppGroupLayout({
@@ -11,7 +10,6 @@ export default function AppGroupLayout({
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100 flex flex-col">
       <SiteHeader />
-      <AccountSetupModal />
       <main className="flex-1">{children}</main>
       <TrustSignals />
       <SiteFooter />

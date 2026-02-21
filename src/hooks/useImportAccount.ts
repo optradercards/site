@@ -30,27 +30,27 @@ export function useImportAccount() {
     }): Promise<ImportResult> => {
       const { platform, handle, accountId } = params;
 
-      // Best-effort: insert a "running" log row
-      let logId: string | null = null;
-      try {
-        const { data: logRow } = await supabase
-          .from("job_logs")
-          .insert({
-            account_id: accountId,
-            platform,
-            handle,
-            status: "running",
-          })
-          .select("id")
-          .single();
-        logId = logRow?.id ?? null;
-      } catch {
-        // logging is best-effort — don't block the import
-      }
-
       let result: ImportResult;
 
       if (platform === "collectr") {
+        // Best-effort: insert a "running" log row
+        let logId: string | null = null;
+        try {
+          const { data: logRow } = await supabase
+            .schema("jobs").from("job_logs")
+            .insert({
+              account_id: accountId,
+              platform,
+              handle,
+              status: "running",
+            })
+            .select("id")
+            .single();
+          logId = logRow?.id ?? null;
+        } catch {
+          // logging is best-effort — don't block the import
+        }
+
         const { data, error } = await supabase.functions.invoke(
           "collectr-import-profile",
           { body: { showcase_id: handle } }
@@ -76,11 +76,54 @@ export function useImportAccount() {
             },
           };
         }
+
+        // Best-effort: update the log row with outcome
+        if (logId) {
+          try {
+            if (result.success) {
+              await supabase
+                .schema("jobs").from("job_logs")
+                .update({
+                  status: "completed",
+                  stats: result.stats,
+                  completed_at: new Date().toISOString(),
+                })
+                .eq("id", logId);
+            } else {
+              await supabase
+                .schema("jobs").from("job_logs")
+                .update({
+                  status: "failed",
+                  error_message: result.error ?? "Unknown error",
+                  completed_at: new Date().toISOString(),
+                })
+                .eq("id", logId);
+            }
+          } catch {
+            // best-effort
+          }
+        }
       } else {
-        // Shiny
+        // Shiny — use job-based flow so the edge function can read
+        // account_id and query from the job row, and set platform_account_id
+        const { data: logRow, error: logError } = await supabase
+          .schema("jobs").from("job_logs")
+          .insert({
+            account_id: accountId,
+            platform,
+            handle,
+            status: "running",
+            payload: { query: handle },
+          })
+          .select("id")
+          .single();
+
+        if (logError) throw logError;
+        const logId = logRow.id;
+
         const { data, error } = await supabase.functions.invoke(
           "shiny-import-collections",
-          { body: { query: handle } }
+          { body: { job_id: logId } }
         );
 
         if (error) {
@@ -103,14 +146,12 @@ export function useImportAccount() {
             },
           };
         }
-      }
 
-      // Best-effort: update the log row with outcome
-      if (logId) {
+        // Update the log row with outcome
         try {
           if (result.success) {
             await supabase
-              .from("job_logs")
+              .schema("jobs").from("job_logs")
               .update({
                 status: "completed",
                 stats: result.stats,
@@ -119,7 +160,7 @@ export function useImportAccount() {
               .eq("id", logId);
           } else {
             await supabase
-              .from("job_logs")
+              .schema("jobs").from("job_logs")
               .update({
                 status: "failed",
                 error_message: result.error ?? "Unknown error",

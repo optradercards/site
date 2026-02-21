@@ -3,6 +3,8 @@ import Link from "next/link";
 import { isAdmin } from "@/lib/admin";
 import { NavMenu } from "./nav-menu";
 
+export const dynamic = "force-dynamic";
+
 interface NavItem {
   href?: string;
   label: string;
@@ -31,29 +33,31 @@ const adminNavItems: NavItem[] = [
     ],
   },
   {
-    label: "Catalog & Operations",
+    label: "Operations",
     icon: "📦",
     children: [
-      { href: "/admin/products", label: "Products", icon: "📋" },
       { href: "/admin/orders", label: "Orders", icon: "🛒" },
     ],
   },
   {
-    label: "Catalog",
+    label: "Products",
     icon: "🎴",
     children: [
-      { href: "/admin/catalog", label: "Catalog Viewer", icon: "👁️" },
-      { href: "/admin/catalog/sync", label: "Catalog Sync", icon: "🔄" },
+      { href: "/admin/catalog", label: "Catalog", icon: "👁️" },
+      { href: "/admin/products", label: "Products", icon: "🃏" },
+      { href: "/admin/market", label: "Market", icon: "💰" },
+      { href: "/admin/collections", label: "Collections", icon: "📦" },
+      { href: "/admin/sync", label: "Sync", icon: "🔄" },
     ],
   },
   {
     label: "Shiny",
     icon: "📥",
     children: [
-      { href: "/admin/import/brands", label: "Import Brands", icon: "🏷️" },
-      { href: "/admin/import/cards", label: "Import Cards", icon: "💾" },
-      { href: "/admin/import/collections", label: "Import Collections", icon: "📦" },
-      { href: "/admin/import/accounts", label: "Import Accounts", icon: "👤" },
+      { href: "/admin/import-brands", label: "Import Brands", icon: "🏷️" },
+      { href: "/admin/import-products", label: "Import Products", icon: "💾" },
+      { href: "/admin/import-collections", label: "Import Collections", icon: "📦" },
+      { href: "/admin/import-accounts", label: "Import Accounts", icon: "👤" },
     ],
   },
   {

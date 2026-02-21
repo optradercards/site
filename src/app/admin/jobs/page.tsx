@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 interface ImportLog {
   id: string;
@@ -21,10 +22,11 @@ interface ImportLog {
 const PLATFORM_LABELS: Record<string, string> = {
   shiny: "Shiny",
   collectr: "Collectr",
-  "shiny-brands": "Brands",
-  "shiny-cards": "Cards",
-  "shiny-collections": "Collections",
-  "shiny-accounts": "Accounts",
+  "shiny-brands": "Shiny Brands",
+  "shiny-cards": "Shiny Cards",
+  "shiny-collections": "Shiny Collections",
+  "shiny-accounts": "Shiny Accounts",
+  "shiny-history": "Shiny History",
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -103,11 +105,15 @@ function JobRow({
   indent,
   expandedError,
   setExpandedError,
+  onRetry,
+  isRetrying,
 }: {
   log: ImportLog;
   indent?: boolean;
   expandedError: string | null;
   setExpandedError: (id: string | null) => void;
+  onRetry: (id: string) => void;
+  isRetrying?: boolean;
 }) {
   return (
     <tr className="border-b border-gray-100 dark:border-gray-700/50">
@@ -121,7 +127,7 @@ function JobRow({
           })}
         </span>
       </td>
-      <td className="px-4 py-3">
+      <td className="px-4 py-3 whitespace-nowrap">
         <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
           {PLATFORM_LABELS[log.platform] ?? log.platform}
         </span>
@@ -159,6 +165,17 @@ function JobRow({
           <span className="text-gray-400">—</span>
         )}
       </td>
+      <td className="px-4 py-3">
+        {(log.status === "pending" || log.status === "failed") && (
+          <button
+            onClick={() => onRetry(log.id)}
+            disabled={isRetrying}
+            className="px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRetrying ? "Retrying…" : "Retry"}
+          </button>
+        )}
+      </td>
     </tr>
   );
 }
@@ -170,6 +187,8 @@ function PipelineGroup({
   setExpandedError,
   expandedPipelines,
   togglePipeline,
+  onRetry,
+  retrying,
 }: {
   dagId: string;
   logs: ImportLog[];
@@ -177,6 +196,8 @@ function PipelineGroup({
   setExpandedError: (id: string | null) => void;
   expandedPipelines: Set<string>;
   togglePipeline: (id: string) => void;
+  onRetry: (id: string) => void;
+  retrying: Set<string>;
 }) {
   const expanded = expandedPipelines.has(dagId);
   const earliest = logs[logs.length - 1];
@@ -220,6 +241,7 @@ function PipelineGroup({
         <td className="px-4 py-3 text-xs">—</td>
         <td className="px-4 py-3 whitespace-nowrap">—</td>
         <td className="px-4 py-3 text-xs">—</td>
+        <td className="px-4 py-3" />
       </tr>
       {expanded &&
         logs.map((log) => (
@@ -229,6 +251,8 @@ function PipelineGroup({
             indent
             expandedError={expandedError}
             setExpandedError={setExpandedError}
+            onRetry={onRetry}
+            isRetrying={retrying.has(log.id)}
           />
         ))}
     </>
@@ -244,6 +268,7 @@ export default function AdminJobsPage() {
     new Set()
   );
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [retrying, setRetrying] = useState<Set<string>>(new Set());
 
   const togglePipeline = useCallback((dagId: string) => {
     setExpandedPipelines((prev) => {
@@ -254,9 +279,70 @@ export default function AdminJobsPage() {
     });
   }, []);
 
+  const retryJob = useCallback(async (jobId: string) => {
+    setRetrying((prev) => new Set(prev).add(jobId));
+    try {
+      // Reset failed jobs so run-job can process them
+      const job = logs.find((l) => l.id === jobId);
+      if (job?.status === "failed") {
+        await supabase
+          .schema("jobs")
+          .from("job_logs")
+          .update({ status: "pending", error_message: null, completed_at: null })
+          .eq("id", jobId);
+      }
+
+      const { error } = await supabase.functions.invoke("run-job", {
+        body: { job_id: jobId },
+      });
+      if (error) throw error;
+      toast.info("Job triggered");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to retry job");
+    } finally {
+      setRetrying((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  }, [supabase, logs]);
+
+  const retryAllPending = useCallback(async () => {
+    const pendingJobs = logs.filter((l) => l.status === "pending");
+    if (pendingJobs.length === 0) {
+      toast.info("No pending jobs");
+      return;
+    }
+    const ids = pendingJobs.map((j) => j.id);
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+    let triggered = 0;
+    for (const job of pendingJobs) {
+      try {
+        await supabase.functions.invoke("run-job", {
+          body: { job_id: job.id },
+        });
+        triggered++;
+      } catch {
+        // continue with remaining jobs
+      }
+    }
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+    toast.info(`Triggered ${triggered} pending job(s)`);
+  }, [supabase, logs]);
+
   const loadLogs = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase
+      .schema("jobs")
       .from("job_logs")
       .select("*")
       .order("created_at", { ascending: false })
@@ -275,20 +361,28 @@ export default function AdminJobsPage() {
       .channel("admin-jobs")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "job_logs" },
+        { event: "INSERT", schema: "jobs", table: "job_logs" },
         (payload) => {
           const newLog = payload.new as ImportLog;
           setLogs((prev) => [newLog, ...prev].slice(0, 100));
+          const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
+          toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
         }
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "job_logs" },
+        { event: "UPDATE", schema: "jobs", table: "job_logs" },
         (payload) => {
           const updated = payload.new as ImportLog;
           setLogs((prev) =>
             prev.map((log) => (log.id === updated.id ? updated : log))
           );
+          const label = PLATFORM_LABELS[updated.platform] ?? updated.platform;
+          if (updated.status === "completed") {
+            toast.success(`${label} completed${updated.handle ? ` (${updated.handle})` : ""}`);
+          } else if (updated.status === "failed") {
+            toast.error(`${label} failed${updated.handle ? ` (${updated.handle})` : ""}`);
+          }
         }
       )
       .subscribe();
@@ -312,17 +406,28 @@ export default function AdminJobsPage() {
   // Group logs into standalone jobs and pipeline groups
   const displayItems = useMemo(() => {
     const pipelineMap = new Map<string, ImportLog[]>();
-    const standalone: ImportLog[] = [];
+    const standaloneList: ImportLog[] = [];
 
+    // First pass: group jobs with a dag_id
     for (const log of logs) {
       if (log.dag_id) {
         const group = pipelineMap.get(log.dag_id);
         if (group) group.push(log);
         else pipelineMap.set(log.dag_id, [log]);
       } else {
-        standalone.push(log);
+        standaloneList.push(log);
       }
     }
+
+    // Second pass: pull standalone jobs into a pipeline if their id is used as a dag_id
+    const standalone = standaloneList.filter((log) => {
+      const group = pipelineMap.get(log.id);
+      if (group) {
+        group.push(log);
+        return false;
+      }
+      return true;
+    });
 
     // Sort pipeline children by created_at ascending (execution order)
     for (const group of pipelineMap.values()) {
@@ -371,13 +476,23 @@ export default function AdminJobsPage() {
             Live view of all import jobs across the platform.
           </p>
         </div>
-        <button
-          onClick={loadLogs}
-          disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-        >
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          {logs.some((l) => l.status === "pending") && (
+            <button
+              onClick={retryAllPending}
+              className="px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+            >
+              Retry All Pending
+            </button>
+          )}
+          <button
+            onClick={loadLogs}
+            disabled={loading}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
@@ -394,13 +509,14 @@ export default function AdminJobsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Platform</th>
-                  <th className="px-4 py-3">Handle</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Stats</th>
-                  <th className="px-4 py-3">Duration</th>
-                  <th className="px-4 py-3">Error</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Date</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Platform</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Handle</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 w-full">Stats</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Duration</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Error</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 dark:text-gray-300">
@@ -411,6 +527,8 @@ export default function AdminJobsPage() {
                       log={item.log}
                       expandedError={expandedError}
                       setExpandedError={setExpandedError}
+                      onRetry={retryJob}
+                      isRetrying={retrying.has(item.log.id)}
                     />
                   ) : (
                     <PipelineGroup
@@ -421,6 +539,8 @@ export default function AdminJobsPage() {
                       setExpandedError={setExpandedError}
                       expandedPipelines={expandedPipelines}
                       togglePipeline={togglePipeline}
+                      onRetry={retryJob}
+                      retrying={retrying}
                     />
                   )
                 )}

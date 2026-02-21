@@ -35,6 +35,7 @@ export default function SupportTicketDetailPage() {
   const router = useRouter();
   const params = useParams();
   const ticketId = params?.id as string;
+  const slug = params?.slug as string;
   const { user } = useUser();
   const { data: profileData } = useProfile();
   const supabase = createClient();
@@ -247,7 +248,7 @@ export default function SupportTicketDetailPage() {
           {error || "Ticket not found"}
         </p>
         <Link
-          href="/settings/support"
+          href={`/${slug}/settings/support`}
           className="inline-block mt-4 text-red-500 hover:text-red-600"
         >
           ← Back to Support
@@ -260,7 +261,7 @@ export default function SupportTicketDetailPage() {
     <div className="space-y-6">
       {/* Back Button */}
       <Link
-        href="/settings/support"
+        href={`/${slug}/settings/support`}
         className="inline-flex items-center text-red-500 hover:text-red-600 font-medium"
       >
         ← Back to Support Tickets
