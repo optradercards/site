@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import HomePageClient from "@/components/HomePageClient";
 import FeaturedCards from "@/components/FeaturedCards";
@@ -17,16 +17,30 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  let dashboardHref: string | null = null;
   if (user) {
     const { data: accounts } = await supabase.rpc("get_accounts");
     const personal = accounts?.find((a: any) => a.personal_account);
     const slug = personal?.slug || personal?.account_id;
-    redirect(slug ? `/${slug}` : "/settings/profile");
+    if (slug) dashboardHref = `/${slug}/manage`;
   }
+
   return (
     <>
       {/* Hero Section */}
       <HeroSection />
+
+      {/* Dashboard CTA for logged-in users */}
+      {dashboardHref && (
+        <div className="bg-red-500 text-white py-3 text-center">
+          <Link
+            href={dashboardHref}
+            className="font-medium hover:underline"
+          >
+            Go to your Dashboard &rarr;
+          </Link>
+        </div>
+      )}
 
       {/* Featured Cards Section */}
       <FeaturedCards />

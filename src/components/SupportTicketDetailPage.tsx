@@ -248,7 +248,7 @@ export default function SupportTicketDetailPage() {
           {error || "Ticket not found"}
         </p>
         <Link
-          href={`/${slug}/settings/support`}
+          href={`/${slug}/manage/support`}
           className="inline-block mt-4 text-red-500 hover:text-red-600"
         >
           ← Back to Support
@@ -261,7 +261,7 @@ export default function SupportTicketDetailPage() {
     <div className="space-y-6">
       {/* Back Button */}
       <Link
-        href={`/${slug}/settings/support`}
+        href={`/${slug}/manage/support`}
         className="inline-flex items-center text-red-500 hover:text-red-600 font-medium"
       >
         ← Back to Support Tickets

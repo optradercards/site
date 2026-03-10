@@ -1,4 +1,4 @@
-export default function AccountSettingsLayout({
+export default function SlugLayout({
   children,
 }: {
   children: React.ReactNode;

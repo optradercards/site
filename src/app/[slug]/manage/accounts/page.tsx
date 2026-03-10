@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useLinkedAccounts, useLinkAccount, useUnlinkAccount } from "@/hooks/useLinkedAccounts";
@@ -267,14 +266,6 @@ export default function AccountsPage() {
             </div>
           )}
 
-          <div className="flex justify-center gap-3 mt-6">
-            <Link
-              href={`/${slug}/settings/import-history`}
-              className="px-6 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
-            >
-              View History
-            </Link>
-          </div>
         </div>
       )}
     </div>

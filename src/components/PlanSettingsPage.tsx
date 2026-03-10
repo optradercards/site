@@ -71,7 +71,7 @@ export default function PlanSettingsPage() {
         {currentPlanType !== "collector" && (
           <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
             <Link
-              href={`/${slug}/settings/members`}
+              href={`/${slug}/manage/members`}
               className="text-red-600 dark:text-red-400 hover:underline text-sm font-medium"
             >
               Manage Team Members

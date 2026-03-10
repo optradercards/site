@@ -38,7 +38,7 @@ export default function AccountSwitcher() {
     switchAccount(account.account_id);
     setIsOpen(false);
     if (account.slug) {
-      router.push(`/${account.slug}`);
+      router.push(`/${account.slug}/manage`);
     }
   };
 

@@ -6,7 +6,13 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
-import { formatPrice } from "@/lib/currency";
+import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
+import {
+  gradeLabel,
+  resolveMarketValue,
+  previewMarketPrice,
+  type MarketData,
+} from "@/lib/pricing";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,24 +37,6 @@ type CollectionItem = {
   collection_name: string | null;
 };
 
-type MarketData = {
-  product_id: string;
-  price_ungraded: number | null;
-  price_psa_1: number | null;
-  price_psa_2: number | null;
-  price_psa_3: number | null;
-  price_psa_4: number | null;
-  price_psa_5: number | null;
-  price_psa_6: number | null;
-  price_psa_7: number | null;
-  price_psa_8: number | null;
-  price_psa_9: number | null;
-  price_psa_10: number | null;
-  price_psa_9_5: number | null;
-  price_bgs: number | null;
-  price_cgc: number | null;
-};
-
 type EcomProduct = {
   id: string;
   card_product_id: string;
@@ -61,108 +49,58 @@ type StagedListing = {
   fixedPriceCents: number | null;
   marketMultiplier: number | null;
   marketRoundTo: number | null;
+  extraCents: number | null;
   quantity: number;
   status: "draft" | "active";
+};
+
+type PricingRule = {
+  maxCents: number | null;
+  multiplier: number;
+  roundTo: number;
+  extraCents: number;
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function gradeLabel(service: string | null, grade: string | null): string {
-  if (!service || service === "ungraded") return "Ungraded";
-  return `${service.toUpperCase()} ${grade ?? ""}`.trim();
+function convertCents(
+  cents: number,
+  fromCurrency: string,
+  toCurrency: string,
+  rates: Record<string, number>
+): number {
+  if (fromCurrency === toCurrency) return cents;
+  const from = fromCurrency.toLowerCase();
+  const to = toCurrency.toLowerCase();
+  const fromRate = from === "usd" ? 1 : (rates[from] ?? 1);
+  const toRate = to === "usd" ? 1 : (rates[to] ?? 1);
+  return Math.round(cents * (toRate / fromRate));
 }
 
-function resolveMarketPrice(
-  market: MarketData | undefined,
-  service: string | null,
-  grade: string | null
-): number | null {
-  if (!market) return null;
-  if (!service || service === "ungraded") return market.price_ungraded;
-  if (service === "psa") {
-    if (grade === "10") return market.price_psa_10;
-    if (grade === "9.5") return market.price_psa_9_5;
-    if (grade === "9") return market.price_psa_9;
-    if (grade === "8") return market.price_psa_8;
-    if (grade === "7") return market.price_psa_7;
-    if (grade === "6") return market.price_psa_6;
-    if (grade === "5") return market.price_psa_5;
-    if (grade === "4") return market.price_psa_4;
-    if (grade === "3") return market.price_psa_3;
-    if (grade === "2") return market.price_psa_2;
-    if (grade === "1") return market.price_psa_1;
-    return market.price_ungraded;
-  }
-  if (service === "bgs") return market.price_bgs;
-  if (service === "cgc") return market.price_cgc;
-  if (service === "sgc") return market.price_ungraded;
-  return market.price_ungraded;
-}
-
-function resolveStagedPrice(
-  staged: StagedListing,
-  marketValue: number | null,
-  cost: number | null
-): number | null {
-  let price: number | null;
-  if (staged.pricingMode === "fixed") {
-    price = staged.fixedPriceCents;
-  } else if (marketValue == null) {
-    price = null;
-  } else {
-    const multiplier = staged.marketMultiplier ?? 1;
-    const roundTo = staged.marketRoundTo ?? 100;
-    price = Math.round((marketValue * multiplier) / roundTo) * roundTo;
-  }
-  if (price != null && cost != null && cost > price) return cost;
-  return price;
-}
-
-type PricingRule = {
-  maxCents: number | null;
-  multiplier: number;
-  roundTo: number;
-};
-
-function resolveRulePrice(
+function matchRule(
   rules: PricingRule[],
-  marketValue: number | null,
-  costUsd: number | null,
-  displayRate: number
-): { price: number | null; displayCents: number | null; ruleIndex: number | null } {
-  const base = Math.max(marketValue ?? 0, costUsd ?? 0);
-  if (base === 0) return { price: null, displayCents: null, ruleIndex: null };
+  base: number
+): { rule: PricingRule; index: number } | null {
+  if (rules.length === 0) return null;
+  // Sort by threshold descending, catch-all last
+  const sorted = rules
+    .map((r, i) => ({ rule: r, index: i }))
+    .sort((a, b) => {
+      if (a.rule.maxCents == null) return 1;
+      if (b.rule.maxCents == null) return -1;
+      return b.rule.maxCents - a.rule.maxCents;
+    });
 
-  // Sort by threshold descending (highest first), catch-all last
-  const sorted = [...rules].sort((a, b) => {
-    if (a.maxCents == null) return 1;
-    if (b.maxCents == null) return -1;
-    return b.maxCents - a.maxCents;
-  });
-
-  // First rule where base > threshold wins; otherwise catch-all
-  let matched = sorted.find((r) => r.maxCents == null) ?? sorted[sorted.length - 1];
-  for (const rule of sorted) {
-    if (rule.maxCents != null && base > rule.maxCents) {
-      matched = rule;
+  let matched = sorted.find((r) => r.rule.maxCents == null) ?? sorted[sorted.length - 1];
+  for (const entry of sorted) {
+    if (entry.rule.maxCents != null && base > entry.rule.maxCents) {
+      matched = entry;
       break;
     }
   }
-
-  const multiplier = matched?.multiplier ?? 1;
-  const roundTo = matched?.roundTo ?? 100;
-
-  // Round in display currency, keep both for display and DB storage
-  const rawDisplayCents = base * multiplier * displayRate;
-  const roundedDisplay = Math.ceil(rawDisplayCents / roundTo) * roundTo;
-  const price = Math.round(roundedDisplay / displayRate);
-
-  // Find original index in the unsorted rules array
-  const ruleIndex = matched ? rules.indexOf(matched) : null;
-
-  return { price, displayCents: roundedDisplay, ruleIndex };
+  return matched;
 }
 
 // ---------------------------------------------------------------------------
@@ -176,25 +114,15 @@ export default function UnlistedPage() {
   const slug = params?.slug as string;
   const { data: profileData } = useProfile();
   const { data: exchangeRates } = useExchangeRates();
-  const currency = profileData?.profile?.default_currency ?? "AUD";
+  const sellerCurrency = profileData?.profile?.default_currency ?? "AUD";
   const rates = exchangeRates ?? {};
+  const exchangeRate = sellerCurrency.toLowerCase() === "usd" ? 1 : (rates[sellerCurrency.toLowerCase()] ?? 1);
+  const currencySymbol =
+    SUPPORTED_CURRENCIES.find((c) => c.code === sellerCurrency)?.symbol ?? "$";
   const fmt = (cents: number | null | undefined) =>
-    formatPrice(cents ?? null, currency, rates);
-  const fmtDisplay = (cents: number | null | undefined) =>
-    formatPrice(cents ?? null, currency, rates, currency);
+    formatPrice(cents ?? null, sellerCurrency, {}, sellerCurrency);
   const fmtCost = (cents: number | null | undefined, srcCurrency: string | null) =>
-    formatPrice(cents ?? null, currency, rates, (srcCurrency ?? "USD").toUpperCase());
-
-  // Convert any-currency cents to USD cents for calculations
-  const toUsdCents = useCallback(
-    (cents: number, sourceCurrency: string): number => {
-      const from = sourceCurrency.toLowerCase();
-      if (from === "usd") return cents;
-      const fromRate = rates[from] ?? 1;
-      return Math.round(cents / fromRate);
-    },
-    [rates]
-  );
+    formatPrice(cents ?? null, sellerCurrency, rates, (srcCurrency ?? "USD").toUpperCase());
 
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [marketMap, setMarketMap] = useState<Record<string, MarketData>>({});
@@ -206,11 +134,11 @@ export default function UnlistedPage() {
 
   // Pricing rules
   const [rules, setRules] = useState<PricingRule[]>([
-    { maxCents: 20000, multiplier: 1.1, roundTo: 500 },
-    { maxCents: 10000, multiplier: 1.15, roundTo: 500 },
-    { maxCents: 5000, multiplier: 1.2, roundTo: 100 },
-    { maxCents: 2500, multiplier: 1.3, roundTo: 100 },
-    { maxCents: null, multiplier: 1.4, roundTo: 100 },
+    { maxCents: 20000, multiplier: 1.1, roundTo: 500, extraCents: 0 },
+    { maxCents: 10000, multiplier: 1.15, roundTo: 500, extraCents: 0 },
+    { maxCents: 5000, multiplier: 1.2, roundTo: 100, extraCents: 0 },
+    { maxCents: 2500, multiplier: 1.3, roundTo: 100, extraCents: 0 },
+    { maxCents: null, multiplier: 1.4, roundTo: 100, extraCents: 0 },
   ]);
   const [bulkStatus, setBulkStatus] = useState<"draft" | "active">("draft");
 
@@ -313,38 +241,74 @@ export default function UnlistedPage() {
   const rows = useMemo(() => {
     let result = unlistedItems.map((item) => {
       const market = marketMap[item.product_id];
-      const marketValue = resolveMarketPrice(
+      const marketValueUsd = resolveMarketValue(
         market,
         item.grading_service,
         item.grade
       );
-      const costUsd =
+      // Convert cost to seller's currency
+      const costSeller =
         item.purchase_price_cents != null
-          ? toUsdCents(
+          ? convertCents(
               item.purchase_price_cents,
-              (item.purchase_price_currency ?? "USD").toUpperCase()
+              (item.purchase_price_currency ?? "USD").toUpperCase(),
+              sellerCurrency,
+              rates
             )
           : null;
+
       const staged = stagedMap.get(item.instance_id);
 
-      // Live rule price (always computed from current rules)
-      const displayRate = rates[currency.toLowerCase()] ?? 1;
-      const { price: rulePrice, displayCents: ruleDisplayCents, ruleIndex } = resolveRulePrice(rules, marketValue, costUsd, displayRate);
+      // Compute base for rule matching (in seller's currency)
+      const marketConverted = Math.round((marketValueUsd ?? 0) * exchangeRate);
+      const base = Math.max(costSeller ?? 0, marketConverted);
 
-      // Display price: staged override uses fmt (USD→display), rule price uses pre-rounded display cents
-      const price = staged ? resolveStagedPrice(staged, marketValue, costUsd) : rulePrice;
-      // For display: use the pre-rounded display cents to avoid round-trip error
-      const displayCents = staged ? null : ruleDisplayCents;
+      // Match rule
+      const matched = matchRule(rules, base);
+      const ruleIndex = matched?.index ?? null;
+
+      // Preview price
+      let priceCents: number | null;
+      if (staged) {
+        if (staged.pricingMode === "fixed") {
+          priceCents = staged.fixedPriceCents;
+        } else {
+          priceCents = previewMarketPrice(
+            costSeller,
+            marketValueUsd,
+            exchangeRate,
+            staged.marketMultiplier ?? 1,
+            staged.extraCents ?? 0,
+            staged.marketRoundTo ?? 100
+          );
+        }
+      } else {
+        priceCents = matched
+          ? previewMarketPrice(
+              costSeller,
+              marketValueUsd,
+              exchangeRate,
+              matched.rule.multiplier,
+              matched.rule.extraCents,
+              matched.rule.roundTo
+            )
+          : null;
+      }
 
       const profit =
-        price != null && costUsd != null ? price - costUsd : null;
-      // Profit in display currency (avoid round-trip)
-      const displayProfit =
-        ruleDisplayCents != null && costUsd != null
-          ? ruleDisplayCents - costUsd * displayRate
+        priceCents != null && costSeller != null
+          ? priceCents - costSeller
           : null;
 
-      return { item, marketValue, costUsd, staged, rulePrice, ruleIndex, price, displayCents, displayProfit, profit };
+      return {
+        item,
+        marketValueUsd,
+        costSeller,
+        staged,
+        ruleIndex,
+        priceCents,
+        profit,
+      };
     });
 
     // Filter by grade
@@ -359,21 +323,21 @@ export default function UnlistedPage() {
     result.sort((a, b) => {
       switch (sortBy) {
         case "market-desc":
-          return (b.marketValue ?? 0) - (a.marketValue ?? 0);
+          return (b.marketValueUsd ?? 0) - (a.marketValueUsd ?? 0);
         case "market-asc":
-          return (a.marketValue ?? 0) - (b.marketValue ?? 0);
+          return (a.marketValueUsd ?? 0) - (b.marketValueUsd ?? 0);
         case "name-asc":
           return a.item.product_name.localeCompare(b.item.product_name);
         case "name-desc":
           return b.item.product_name.localeCompare(a.item.product_name);
         case "cost-desc": {
-          const aCost = a.item.purchase_price_cents ?? 0;
-          const bCost = b.item.purchase_price_cents ?? 0;
+          const aCost = a.costSeller ?? 0;
+          const bCost = b.costSeller ?? 0;
           return bCost - aCost;
         }
         case "cost-asc": {
-          const aCost = a.item.purchase_price_cents ?? 0;
-          const bCost = b.item.purchase_price_cents ?? 0;
+          const aCost = a.costSeller ?? 0;
+          const bCost = b.costSeller ?? 0;
           return aCost - bCost;
         }
         default:
@@ -382,7 +346,7 @@ export default function UnlistedPage() {
     });
 
     return result;
-  }, [unlistedItems, marketMap, stagedMap, gradeFilter, sortBy, rules, toUsdCents, currency, rates]);
+  }, [unlistedItems, marketMap, stagedMap, gradeFilter, sortBy, rules, sellerCurrency, rates, exchangeRate]);
 
   // -------------------------------------------------------------------------
   // Summary totals
@@ -392,20 +356,20 @@ export default function UnlistedPage() {
     let totalItems = 0;
     let totalCost = 0;
     let totalMarket = 0;
-    let totalDisplayPrice = 0;
-    let totalDisplayProfit = 0;
+    let totalPrice = 0;
+    let totalProfit = 0;
 
     for (const r of rows) {
       const qty = r.item.quantity;
       totalItems += qty;
-      if (r.costUsd != null) totalCost += r.costUsd * qty;
-      if (r.marketValue != null) totalMarket += r.marketValue * qty;
-      if (r.displayCents != null) totalDisplayPrice += r.displayCents * qty;
-      if (r.displayProfit != null) totalDisplayProfit += Math.round(r.displayProfit) * qty;
+      if (r.costSeller != null) totalCost += r.costSeller * qty;
+      if (r.marketValueUsd != null) totalMarket += Math.round(r.marketValueUsd * exchangeRate) * qty;
+      if (r.priceCents != null) totalPrice += r.priceCents * qty;
+      if (r.profit != null) totalProfit += r.profit * qty;
     }
 
-    return { totalItems, totalCost, totalMarket, totalDisplayPrice, totalDisplayProfit };
-  }, [rows]);
+    return { totalItems, totalCost, totalMarket, totalPrice, totalProfit };
+  }, [rows, exchangeRate]);
 
   // -------------------------------------------------------------------------
   // Selection
@@ -431,10 +395,6 @@ export default function UnlistedPage() {
   const selectedCount = rows.filter((r) =>
     selectedItems.has(r.item.instance_id)
   ).length;
-
-  // -------------------------------------------------------------------------
-  // Apply bulk pricing
-  // -------------------------------------------------------------------------
 
   // -------------------------------------------------------------------------
   // Per-item edit
@@ -466,8 +426,8 @@ export default function UnlistedPage() {
     for (const r of rows) {
       if (!selectedItems.has(r.item.instance_id)) continue;
 
-      // Use the matched rule's multiplier & round-to for dynamic market pricing
-      const matchedRule = r.ruleIndex != null ? rules[r.ruleIndex] : null;
+      // Use the matched rule's pricing config
+      const matched = r.ruleIndex != null ? rules[r.ruleIndex] : null;
 
       const row = {
         account_id: activeAccountId,
@@ -476,8 +436,13 @@ export default function UnlistedPage() {
         grade: r.item.grade,
         pricing_mode: "market" as const,
         fixed_price_cents: null,
-        market_multiplier: matchedRule?.multiplier ?? 1,
-        market_round_to: matchedRule?.roundTo ?? 100,
+        market_multiplier: matched?.multiplier ?? 1,
+        market_round_to: matched?.roundTo ?? 100,
+        market_extra_cents: matched?.extraCents ?? 0,
+        cost_cents: r.costSeller,
+        exchange_rate: exchangeRate,
+        price_cents: r.priceCents,
+        currency: sellerCurrency,
         quantity: r.item.quantity,
         status: bulkStatus,
       };
@@ -522,14 +487,14 @@ export default function UnlistedPage() {
         <SummaryCard label="Items" value={String(totals.totalItems)} />
         <SummaryCard label="Total Cost" value={fmt(totals.totalCost)} />
         <SummaryCard label="Market Value" value={fmt(totals.totalMarket)} />
-        <SummaryCard label="List Price" value={fmtDisplay(totals.totalDisplayPrice)} />
+        <SummaryCard label="List Price" value={fmt(totals.totalPrice)} />
         <SummaryCard
           label="Profit"
-          value={fmtDisplay(totals.totalDisplayProfit)}
+          value={fmt(totals.totalProfit)}
           color={
-            totals.totalDisplayProfit > 0
+            totals.totalProfit > 0
               ? "text-green-600 dark:text-green-400"
-              : totals.totalDisplayProfit < 0
+              : totals.totalProfit < 0
                 ? "text-red-600 dark:text-red-400"
                 : undefined
           }
@@ -633,7 +598,7 @@ export default function UnlistedPage() {
                       <span className="text-sm text-gray-500 dark:text-gray-400">
                         {">"}
                       </span>
-                      <span className="text-sm text-gray-400">$</span>
+                      <span className="text-sm text-gray-400">{currencySymbol}</span>
                       <input
                         type="number"
                         step="1"
@@ -667,6 +632,27 @@ export default function UnlistedPage() {
                         setRules((prev) =>
                           prev.map((r, j) =>
                             j === i ? { ...r, multiplier: val } : r
+                          )
+                        );
+                      }}
+                      className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-gray-400">+{currencySymbol}</span>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      value={rule.extraCents / 100}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (isNaN(val)) return;
+                        setRules((prev) =>
+                          prev.map((r, j) =>
+                            j === i
+                              ? { ...r, extraCents: Math.round(val * 100) }
+                              : r
                           )
                         );
                       }}
@@ -720,7 +706,7 @@ export default function UnlistedPage() {
                   const newThreshold = lowest === Infinity ? 5000 : Math.max(Math.round(lowest / 2), 100);
                   return [
                     ...thresholds,
-                    { maxCents: newThreshold, multiplier: 1.2, roundTo: 100 },
+                    { maxCents: newThreshold, multiplier: 1.2, roundTo: 100, extraCents: 0 },
                     ...(catchAll ? [catchAll] : []),
                   ];
                 });
@@ -823,7 +809,7 @@ export default function UnlistedPage() {
                       {fmtCost(r.item.purchase_price_cents, r.item.purchase_price_currency)}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
-                      {fmt(r.marketValue)}
+                      {fmt(r.marketValueUsd != null ? Math.round(r.marketValueUsd * exchangeRate) : null)}
                     </td>
                     {/* Rule */}
                     <td className="px-4 py-3 text-center">
@@ -839,7 +825,7 @@ export default function UnlistedPage() {
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {isEditing && staged?.pricingMode === "fixed" ? (
                         <div className="flex items-center justify-end gap-1">
-                          <span className="text-gray-400 text-xs">$</span>
+                          <span className="text-gray-400 text-xs">{currencySymbol}</span>
                           <input
                             type="number"
                             step="0.01"
@@ -870,25 +856,25 @@ export default function UnlistedPage() {
                           className="hover:text-red-500 dark:hover:text-red-400 cursor-pointer"
                           title="Click to edit price"
                         >
-                          {fmt(r.price)}
+                          {fmt(r.priceCents)}
                         </button>
                       ) : (
                         <span className="text-gray-400">
-                          {fmtDisplay(r.displayCents)}
+                          {fmt(r.priceCents)}
                         </span>
                       )}
                     </td>
                     {/* Profit */}
                     <td
                       className={`px-4 py-3 text-right font-medium ${
-                        (r.displayProfit ?? r.profit ?? 0) > 0
+                        (r.profit ?? 0) > 0
                           ? "text-green-600 dark:text-green-400"
-                          : (r.displayProfit ?? r.profit ?? 0) < 0
+                          : (r.profit ?? 0) < 0
                             ? "text-red-600 dark:text-red-400"
                             : "text-gray-900 dark:text-gray-100"
                       }`}
                     >
-                      {r.staged ? fmt(r.profit) : fmtDisplay(r.displayProfit != null ? Math.round(r.displayProfit) : null)}
+                      {fmt(r.profit)}
                     </td>
                   </tr>
                 );

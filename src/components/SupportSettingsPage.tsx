@@ -274,7 +274,7 @@ export default function SupportSettingsPage() {
             {tickets.map((ticket) => (
               <Link
                 key={ticket.id}
-                href={`/${slug}/settings/support/${ticket.id}`}
+                href={`/${slug}/manage/support/${ticket.id}`}
                 className="block border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-md transition-all cursor-pointer"
               >
                 <div className="flex items-start justify-between gap-4 mb-2">

@@ -6,7 +6,7 @@ import AccountSetupModal from "@/components/AccountSetupModal";
 import TrustSignals from "@/components/TrustSignals";
 import { AccountProvider } from "@/contexts/AccountContext";
 
-export default async function AppLayout({
+export default async function AccountLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;

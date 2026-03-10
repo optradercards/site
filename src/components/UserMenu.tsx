@@ -67,7 +67,7 @@ export default function UserMenu({ mobile, onNavigate }: UserMenuProps) {
           Profile Settings
         </Link>
         <Link
-          href={`/${activeAccount?.slug}/settings/support`}
+          href={`/${activeAccount?.slug}/manage/support`}
           onClick={onNavigate}
           className="block px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors text-center"
         >
@@ -126,7 +126,7 @@ export default function UserMenu({ mobile, onNavigate }: UserMenuProps) {
               Profile Settings
             </Link>
             <Link
-              href={`/${activeAccount?.slug}/settings/support`}
+              href={`/${activeAccount?.slug}/manage/support`}
               onClick={() => setIsDropdownOpen(false)}
               className="block px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >

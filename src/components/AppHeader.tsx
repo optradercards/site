@@ -11,11 +11,12 @@ import UserMenu from "@/components/UserMenu";
 
 export default function AppHeader() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { activeAccount } = useAccounts();
+  const { activeAccount, isDealer } = useAccounts();
   const { isAdmin } = useUser();
 
   const slug = activeAccount?.slug || "";
-  const dashboardHref = slug ? `/${slug}` : "/";
+  const dashboardHref = slug ? `/${slug}/manage` : "/";
+  const manageHref = slug ? `/${slug}/manage` : null;
 
   return (
     <header className="bg-gray-800 dark:bg-gray-950 text-white shadow-lg sticky top-0 z-50">
@@ -56,6 +57,16 @@ export default function AppHeader() {
                   Dashboard
                 </Link>
               </li>
+              {isDealer && manageHref && (
+                <li>
+                  <Link
+                    href={manageHref}
+                    className="font-medium transition-colors px-4 py-2 rounded text-white hover:text-red-500 hover:bg-white hover:bg-opacity-10 whitespace-nowrap"
+                  >
+                    Manage Store
+                  </Link>
+                </li>
+              )}
             </ul>
 
             <CurrencySwitcher />
@@ -110,6 +121,17 @@ export default function AppHeader() {
                   Dashboard
                 </Link>
               </li>
+              {isDealer && manageHref && (
+                <li>
+                  <Link
+                    href={manageHref}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="block font-medium transition-colors px-4 py-2 rounded text-white hover:text-red-500 hover:bg-white hover:bg-opacity-10"
+                  >
+                    Manage Store
+                  </Link>
+                </li>
+              )}
             </ul>
 
             <div className="mt-4 px-2">

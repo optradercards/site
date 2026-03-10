@@ -4,63 +4,12 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
-import { useProfile } from "@/hooks/useProfile";
-import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
+import { gradeLabel, type EcomListing } from "@/lib/pricing";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type EcomProduct = {
-  id: string;
-  card_product_id: string;
-  grading_service: string | null;
-  grade: string | null;
-  pricing_mode: "fixed" | "market";
-  fixed_price_cents: number | null;
-  market_multiplier: number | null;
-  market_round_to: number | null;
-  currency: string;
-  status: string;
-  quantity: number;
-};
-
-type MarketData = {
-  product_id: string;
-  price_ungraded: number | null;
-  price_psa_1: number | null;
-  price_psa_2: number | null;
-  price_psa_3: number | null;
-  price_psa_4: number | null;
-  price_psa_5: number | null;
-  price_psa_6: number | null;
-  price_psa_7: number | null;
-  price_psa_8: number | null;
-  price_psa_9: number | null;
-  price_psa_10: number | null;
-  price_psa_9_5: number | null;
-  price_bgs: number | null;
-  price_cgc: number | null;
-};
-
-type CardInfo = {
-  id: string;
-  name: string;
-  image_url: string | null;
-  card_number: string | null;
-  rarity: string | null;
-  set_name: string;
-  brand_name: string;
-};
-
-type CollectionCost = {
-  product_id: string;
-  grading_service: string | null;
-  grade: string | null;
-  purchase_price_cents: number | null;
-  purchase_price_currency: string | null;
-};
 
 type LabelItem = {
   name: string;
@@ -71,67 +20,9 @@ type LabelItem = {
 };
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function gradeLabel(service: string | null, grade: string | null): string {
-  if (!service || service === "ungraded") return "Ungraded";
-  return `${service.toUpperCase()} ${grade ?? ""}`.trim();
-}
-
-function resolveMarketPrice(
-  market: MarketData | undefined,
-  service: string | null,
-  grade: string | null
-): number | null {
-  if (!market) return null;
-  if (!service || service === "ungraded") return market.price_ungraded;
-  if (service === "psa") {
-    if (grade === "10") return market.price_psa_10;
-    if (grade === "9.5") return market.price_psa_9_5;
-    if (grade === "9") return market.price_psa_9;
-    if (grade === "8") return market.price_psa_8;
-    if (grade === "7") return market.price_psa_7;
-    if (grade === "6") return market.price_psa_6;
-    if (grade === "5") return market.price_psa_5;
-    if (grade === "4") return market.price_psa_4;
-    if (grade === "3") return market.price_psa_3;
-    if (grade === "2") return market.price_psa_2;
-    if (grade === "1") return market.price_psa_1;
-    return market.price_ungraded;
-  }
-  if (service === "bgs") return market.price_bgs;
-  if (service === "cgc") return market.price_cgc;
-  if (service === "sgc") return market.price_ungraded;
-  return market.price_ungraded;
-}
-
-function resolveListingPrice(
-  listing: EcomProduct,
-  marketValue: number | null,
-  cost: number | null,
-  displayRate: number = 1
-): { price: number | null; displayCents: number | null } {
-  if (listing.pricing_mode === "fixed") {
-    const price = listing.fixed_price_cents;
-    const displayCents = price != null ? Math.round(price * displayRate) : null;
-    return { price, displayCents };
-  }
-  const base = Math.max(marketValue ?? 0, cost ?? 0);
-  if (base === 0) return { price: null, displayCents: null };
-  const multiplier = listing.market_multiplier ?? 1;
-  const roundTo = listing.market_round_to ?? 100;
-  const rawDisplayCents = base * multiplier * displayRate;
-  const displayCents = Math.ceil(rawDisplayCents / roundTo) * roundTo;
-  const price = Math.round(displayCents / displayRate);
-  return { price, displayCents };
-}
-
-// ---------------------------------------------------------------------------
 // ZPL Generation
 // ---------------------------------------------------------------------------
 
-// Strip non-ASCII characters for ZPL compatibility
 function zplSafe(str: string): string {
   return str.replace(/[^\x20-\x7E]/g, "");
 }
@@ -173,21 +64,8 @@ export default function LabelsPage() {
   const supabase = createClient();
   const { activeAccountId } = useAccounts();
   const params = useParams();
-  const { data: profileData } = useProfile();
-  const { data: exchangeRates } = useExchangeRates();
-  const currency = profileData?.profile?.default_currency ?? "AUD";
-  const rates = exchangeRates ?? {};
-  const fmt = (cents: number | null | undefined) =>
-    formatPrice(cents ?? null, currency, rates);
-  const fmtDisplay = (cents: number | null | undefined) =>
-    formatPrice(cents ?? null, currency, rates, currency);
 
-  const [listings, setListings] = useState<EcomProduct[]>([]);
-  const [cardMap, setCardMap] = useState<Record<string, CardInfo>>({});
-  const [marketMap, setMarketMap] = useState<Record<string, MarketData>>({});
-  const [costMap, setCostMap] = useState<
-    Record<string, { cents: number | null; currency: string }>
-  >({});
+  const [listings, setListings] = useState<EcomListing[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Selection
@@ -212,73 +90,13 @@ export default function LabelsPage() {
     if (!activeAccountId) return;
     setLoading(true);
 
-    const { data: ecomData } = await supabase
+    const { data } = await supabase
       .schema("ecom")
-      .from("products")
+      .from("listing_details")
       .select("*")
       .eq("account_id", activeAccountId);
 
-    const ecomList = (ecomData ?? []) as EcomProduct[];
-    setListings(ecomList);
-
-    if (ecomList.length === 0) {
-      setCardMap({});
-      setMarketMap({});
-      setCostMap({});
-      setLoading(false);
-      return;
-    }
-
-    const productIds = [...new Set(ecomList.map((l) => l.card_product_id))];
-
-    const [cardsRes, marketRes, collRes] = await Promise.all([
-      supabase
-        .schema("cards")
-        .from("products_with_details")
-        .select(
-          "id, name, image_url, card_number, rarity, set_name, brand_name"
-        )
-        .in("id", productIds),
-      supabase
-        .schema("cards")
-        .from("market_data")
-        .select("*")
-        .in("product_id", productIds),
-      supabase
-        .schema("cards")
-        .from("user_collection_summary")
-        .select(
-          "product_id, grading_service, grade, purchase_price_cents, purchase_price_currency"
-        )
-        .eq("account_id", activeAccountId)
-        .in("product_id", productIds),
-    ]);
-
-    const cMap: Record<string, CardInfo> = {};
-    for (const c of (cardsRes.data ?? []) as CardInfo[]) {
-      cMap[c.id] = c;
-    }
-    setCardMap(cMap);
-
-    const mMap: Record<string, MarketData> = {};
-    for (const m of (marketRes.data ?? []) as MarketData[]) {
-      mMap[m.product_id] = m;
-    }
-    setMarketMap(mMap);
-
-    const costs: Record<
-      string,
-      { cents: number | null; currency: string }
-    > = {};
-    for (const c of (collRes.data ?? []) as CollectionCost[]) {
-      const key = `${c.product_id}|${c.grading_service ?? ""}|${c.grade ?? ""}`;
-      costs[key] = {
-        cents: c.purchase_price_cents,
-        currency: (c.purchase_price_currency ?? "USD").toUpperCase(),
-      };
-    }
-    setCostMap(costs);
-
+    setListings((data ?? []) as EcomListing[]);
     setLoading(false);
   }, [supabase, activeAccountId]);
 
@@ -286,16 +104,10 @@ export default function LabelsPage() {
     loadData();
   }, [loadData]);
 
-  // Convert any-currency cents to USD cents
-  const toUsdCents = useCallback(
-    (cents: number, sourceCurrency: string): number => {
-      const from = sourceCurrency.toLowerCase();
-      if (from === "usd") return cents;
-      const fromRate = rates[from] ?? 1;
-      return Math.round(cents / fromRate);
-    },
-    [rates]
-  );
+  // Seller's currency (all listings share the same account/currency)
+  const sellerCurrency = listings[0]?.currency ?? "AUD";
+  const fmt = (cents: number | null | undefined) =>
+    formatPrice(cents ?? null, sellerCurrency, {}, sellerCurrency);
 
   // -------------------------------------------------------------------------
   // Rows with filtering & sorting
@@ -310,30 +122,7 @@ export default function LabelsPage() {
   }, [listings]);
 
   const rows = useMemo(() => {
-    let result = listings.map((listing) => {
-      const card = cardMap[listing.card_product_id];
-      const market = marketMap[listing.card_product_id];
-      const marketValue = resolveMarketPrice(
-        market,
-        listing.grading_service,
-        listing.grade
-      );
-      const costKey = `${listing.card_product_id}|${listing.grading_service ?? ""}|${listing.grade ?? ""}`;
-      const costEntry = costMap[costKey];
-      const costCents = costEntry?.cents ?? null;
-      const costCurrency = costEntry?.currency ?? "USD";
-      const costUsd =
-        costCents != null ? toUsdCents(costCents, costCurrency) : null;
-      const displayRate = rates[currency.toLowerCase()] ?? 1;
-      const { price, displayCents } = resolveListingPrice(
-        listing,
-        marketValue,
-        costUsd,
-        displayRate
-      );
-
-      return { listing, card, marketValue, price, displayCents };
-    });
+    let result = listings.map((listing) => ({ listing }));
 
     // Filter by grade
     if (gradeFilter !== "all") {
@@ -347,30 +136,20 @@ export default function LabelsPage() {
     result.sort((a, b) => {
       switch (sortBy) {
         case "name-asc":
-          return (a.card?.name ?? "").localeCompare(b.card?.name ?? "");
+          return (a.listing.card_name ?? "").localeCompare(b.listing.card_name ?? "");
         case "name-desc":
-          return (b.card?.name ?? "").localeCompare(a.card?.name ?? "");
+          return (b.listing.card_name ?? "").localeCompare(a.listing.card_name ?? "");
         case "price-desc":
-          return (b.price ?? 0) - (a.price ?? 0);
+          return (b.listing.price_cents ?? 0) - (a.listing.price_cents ?? 0);
         case "price-asc":
-          return (a.price ?? 0) - (b.price ?? 0);
+          return (a.listing.price_cents ?? 0) - (b.listing.price_cents ?? 0);
         default:
           return 0;
       }
     });
 
     return result;
-  }, [
-    listings,
-    cardMap,
-    marketMap,
-    costMap,
-    gradeFilter,
-    sortBy,
-    toUsdCents,
-    rates,
-    currency,
-  ]);
+  }, [listings, gradeFilter, sortBy]);
 
   // -------------------------------------------------------------------------
   // Selection
@@ -402,10 +181,10 @@ export default function LabelsPage() {
   // -------------------------------------------------------------------------
 
   const toLabelItem = (r: (typeof rows)[number]): LabelItem => ({
-    name: r.card?.name ?? "Unknown",
-    cardNumber: r.card?.card_number ?? null,
-    rarity: r.card?.rarity ?? null,
-    price: fmtDisplay(r.displayCents),
+    name: r.listing.title ?? r.listing.card_name ?? "Unknown",
+    cardNumber: r.listing.card_number ?? null,
+    rarity: r.listing.rarity ?? null,
+    price: fmt(r.listing.price_cents),
     quantity: r.listing.quantity,
   });
 
@@ -463,7 +242,7 @@ export default function LabelsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `label-${(r.card?.name ?? "item").replace(/[^a-zA-Z0-9]/g, "_")}.zpl`;
+    a.download = `label-${(r.listing.card_name ?? "item").replace(/[^a-zA-Z0-9]/g, "_")}.zpl`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -660,10 +439,10 @@ export default function LabelsPage() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      {r.card?.image_url ? (
+                      {r.listing.image_url ? (
                         <img
-                          src={r.card.image_url}
-                          alt={r.card?.name ?? ""}
+                          src={r.listing.image_url}
+                          alt={r.listing.card_name ?? ""}
                           className="w-10 h-14 object-contain rounded"
                         />
                       ) : (
@@ -673,16 +452,16 @@ export default function LabelsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      {r.card?.name ?? "\u2014"}
+                      {r.listing.card_name ?? "\u2014"}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.card?.card_number ?? "\u2014"}
+                      {r.listing.card_number ?? "\u2014"}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.card?.set_name ?? "\u2014"}
+                      {r.listing.set_name ?? "\u2014"}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.card?.rarity ?? "\u2014"}
+                      {r.listing.rarity ?? "\u2014"}
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {gradeLabel(
@@ -694,7 +473,7 @@ export default function LabelsPage() {
                       {r.listing.quantity}
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-gray-900 dark:text-gray-100">
-                      {fmtDisplay(r.displayCents)}
+                      {fmt(r.listing.price_cents)}
                     </td>
                     <td className="px-4 py-3">
                       <button
