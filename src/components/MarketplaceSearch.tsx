@@ -7,6 +7,8 @@ interface MarketplaceSearchProps {
   brands: string[];
   sets: string[];
   rarities: string[];
+  basePath?: string;
+  showSearch?: boolean;
 }
 
 const COLLAPSED_LIMIT = 7;
@@ -112,11 +114,14 @@ export default function MarketplaceSearch({
   brands,
   sets,
   rarities,
+  basePath = "/search",
+  showSearch = false,
 }: MarketplaceSearchProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState(searchParams.get("q") ?? "");
 
   const brandValues = parseMulti(searchParams.get("brand") ?? "");
   const setValues = parseMulti(searchParams.get("set") ?? "");
@@ -127,8 +132,9 @@ export default function MarketplaceSearch({
 
   function navigate(params: URLSearchParams) {
     params.delete("page");
+    const qs = params.toString();
     startTransition(() => {
-      router.push(`/search?${params.toString()}`, { scroll: false });
+      router.push(qs ? `${basePath}?${qs}` : basePath, { scroll: false });
     });
   }
 
@@ -174,10 +180,22 @@ export default function MarketplaceSearch({
     const params = new URLSearchParams(searchParams.toString());
     const q = params.get("q");
     startTransition(() => {
-      router.push(q ? `/search?q=${encodeURIComponent(q)}` : "/search", {
+      router.push(q ? `${basePath}?q=${encodeURIComponent(q)}` : basePath, {
         scroll: false,
       });
     });
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const params = new URLSearchParams(searchParams.toString());
+    const trimmed = searchInput.trim();
+    if (trimmed) {
+      params.set("q", trimmed);
+    } else {
+      params.delete("q");
+    }
+    navigate(params);
   }
 
   // Active filter pills
@@ -189,6 +207,32 @@ export default function MarketplaceSearch({
 
   const filterContent = (
     <div className={`space-y-4 ${isPending ? "opacity-60 pointer-events-none" : ""}`}>
+      {/* Store search */}
+      {showSearch && (
+        <form onSubmit={handleSearch} className="border-b border-gray-200 dark:border-gray-700 pb-4">
+          <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-2">
+            Search Store
+          </h3>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              placeholder="Card name, set..."
+              className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors shrink-0"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </button>
+          </div>
+        </form>
+      )}
+
       {/* Active filter pills */}
       {activeFilters.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pb-3 border-b border-gray-200 dark:border-gray-700">

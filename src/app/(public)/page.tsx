@@ -64,9 +64,8 @@ export default async function Home() {
       .order("name"),
     supabase
       .schema("ecom")
-      .from("listings")
+      .from("storefront_listings")
       .select("*")
-      .eq("status", "active")
       .order("updated_at", { ascending: false })
       .limit(12),
   ]);

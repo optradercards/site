@@ -69,23 +69,20 @@ export default async function SearchPage({
   const [brandsRes, setsRes, raritiesRes] = await Promise.all([
     supabase
       .schema("ecom")
-      .from("listings")
+      .from("storefront_listings")
       .select("brand_name")
-      .eq("status", "active")
       .order("brand_name")
       .limit(100),
     supabase
       .schema("ecom")
-      .from("listings")
+      .from("storefront_listings")
       .select("set_name")
-      .eq("status", "active")
       .order("set_name")
       .limit(500),
     supabase
       .schema("ecom")
-      .from("listings")
+      .from("storefront_listings")
       .select("rarity")
-      .eq("status", "active")
       .not("rarity", "is", null)
       .order("rarity")
       .limit(100),
@@ -106,9 +103,8 @@ export default async function SearchPage({
   // Build listings query
   let query = supabase
     .schema("ecom")
-    .from("listings")
-    .select("*", { count: "exact" })
-    .eq("status", "active");
+    .from("storefront_listings")
+    .select("*", { count: "exact" });
 
   if (q) {
     query = query.or(

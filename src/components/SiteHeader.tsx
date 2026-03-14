@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/contexts/UserContext";
+import { useCart, useCartCount, useRemoveFromCart } from "@/hooks/useCart";
+import { useExchangeRates } from "@/hooks/useExchangeRates";
+import { formatPrice } from "@/lib/currency";
 import SearchBar from "@/components/SearchBar";
 
 
@@ -13,22 +16,35 @@ export default function SiteHeader() {
   const { user } = useUser();
   const router = useRouter();
   const supabase = createClient();
+  const { data: cartCount } = useCartCount();
+  const { data: cartItems } = useCart();
+  const { data: rates } = useExchangeRates();
+  const removeFromCart = useRemoveFromCart();
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const accountRef = useRef<HTMLDivElement>(null);
+  const cartRef = useRef<HTMLDivElement>(null);
 
-  // Close account dropdown on outside click
+  const displayCurrency = "AUD";
+  const fmtPrice = (cents: number | null, sourceCurrency: string) =>
+    formatPrice(cents, displayCurrency, rates ?? {}, sourceCurrency);
+
+  // Close dropdowns on outside click
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (accountRef.current && !accountRef.current.contains(e.target as Node)) {
         setIsAccountOpen(false);
       }
+      if (cartRef.current && !cartRef.current.contains(e.target as Node)) {
+        setIsCartOpen(false);
+      }
     }
-    if (isAccountOpen) {
+    if (isAccountOpen || isCartOpen) {
       document.addEventListener("mousedown", handleClick);
       return () => document.removeEventListener("mousedown", handleClick);
     }
-  }, [isAccountOpen]);
+  }, [isAccountOpen, isCartOpen]);
 
   const displayName =
     user?.user_metadata?.full_name ||
@@ -151,15 +167,114 @@ export default function SiteHeader() {
               Notifications
             </Link>
             <span className="text-gray-600">|</span>
-            <Link
-              href={user ? "/cart" : "/login"}
-              className="text-gray-300 hover:text-white transition-colors inline-flex items-center gap-1"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
-              </svg>
-              Cart
-            </Link>
+            <div ref={cartRef} className="relative">
+              <button
+                onClick={() => {
+                  if (!user) { router.push("/login"); return; }
+                  setIsCartOpen(!isCartOpen);
+                  setIsAccountOpen(false);
+                }}
+                className="text-gray-300 hover:text-white transition-colors font-medium inline-flex items-center gap-1 relative"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+                </svg>
+                Cart
+                {!!cartCount && cartCount > 0 && (
+                  <span className="absolute -top-2 -right-3 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                    {cartCount > 9 ? "9+" : cartCount}
+                  </span>
+                )}
+              </button>
+              {isCartOpen && (
+                <div className="absolute right-0 mt-1.5 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 text-sm">
+                  {!cartItems || cartItems.length === 0 ? (
+                    <div className="p-6 text-center">
+                      <svg className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+                      </svg>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">Your cart is empty</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="max-h-72 overflow-y-auto">
+                        {cartItems.slice(0, 5).map((item) => (
+                          <div key={item.id} className="flex gap-3 p-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
+                            <Link
+                              href={`/listing/${item.product_id}`}
+                              onClick={() => setIsCartOpen(false)}
+                              className="shrink-0"
+                            >
+                              <div className="w-10 h-14 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                                {item.image_url ? (
+                                  <img src={item.image_url} alt={item.title} className="w-full h-full object-contain" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                  </div>
+                                )}
+                              </div>
+                            </Link>
+                            <div className="flex-1 min-w-0">
+                              <Link
+                                href={`/listing/${item.product_id}`}
+                                onClick={() => setIsCartOpen(false)}
+                                className="text-xs font-medium text-gray-800 dark:text-gray-200 hover:text-red-500 transition-colors line-clamp-1"
+                              >
+                                {item.title}
+                              </Link>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                Qty: {item.quantity}
+                              </p>
+                              <p className="text-xs font-bold text-gray-900 dark:text-gray-100 mt-0.5">
+                                {fmtPrice(item.price_cents != null ? item.price_cents * item.quantity : null, item.currency)}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => removeFromCart.mutate(item.id)}
+                              className="shrink-0 text-gray-400 hover:text-red-500 transition-colors self-start mt-0.5"
+                              aria-label="Remove"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      {cartItems.length > 5 && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 text-center py-1.5 border-t border-gray-100 dark:border-gray-700">
+                          +{cartItems.length - 5} more {cartItems.length - 5 === 1 ? "item" : "items"}
+                        </p>
+                      )}
+                      <div className="p-3 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-2.5">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">Subtotal</span>
+                          <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            A${((cartItems.reduce((sum, item) => {
+                              if (item.price_cents == null) return sum;
+                              const from = item.currency.toLowerCase();
+                              const fromRate = from === "usd" ? 1 : (rates?.[from] ?? 1);
+                              const toRate = rates?.["aud"] ?? 1;
+                              return sum + (item.price_cents * item.quantity * toRate) / fromRate;
+                            }, 0)) / 100).toFixed(2)}
+                          </span>
+                        </div>
+                        <Link
+                          href="/cart"
+                          onClick={() => setIsCartOpen(false)}
+                          className="block w-full py-2 bg-red-500 text-white font-semibold rounded-full hover:bg-red-600 transition-colors text-xs text-center"
+                        >
+                          View Cart ({cartCount})
+                        </Link>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -196,12 +311,17 @@ export default function SiteHeader() {
             </Link>
             <Link
               href={user ? "/cart" : "/login"}
-              className="p-2 text-gray-300 hover:text-white transition-colors"
+              className="p-2 text-gray-300 hover:text-white transition-colors relative"
               aria-label="Cart"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
               </svg>
+              {!!cartCount && cartCount > 0 && (
+                <span className="absolute top-0.5 right-0 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {cartCount > 9 ? "9+" : cartCount}
+                </span>
+              )}
             </Link>
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}

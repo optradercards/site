@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
+import ListingActions from "@/components/ListingActions";
 
 type Listing = {
   id: string;
@@ -55,7 +56,7 @@ export async function generateMetadata({
   const supabase = await createClient();
   const { data } = await supabase
     .schema("ecom")
-    .from("listings")
+    .from("storefront_listings")
     .select("title, set_name, seller_name, image_url, price_cents, currency")
     .eq("id", id)
     .single();
@@ -93,7 +94,7 @@ export default async function ListingDetailPage({
   // Fetch listing
   const { data: listing, error } = await supabase
     .schema("ecom")
-    .from("listings")
+    .from("storefront_listings")
     .select("*")
     .eq("id", id)
     .single();
@@ -108,10 +109,9 @@ export default async function ListingDetailPage({
     fetchExchangeRates(supabase),
     supabase
       .schema("ecom")
-      .from("listings")
+      .from("storefront_listings")
       .select("id, title, image_url, price_cents, currency")
       .eq("seller_slug", item.seller_slug)
-      .eq("status", "active")
       .neq("id", item.id)
       .order("updated_at", { ascending: false })
       .limit(6),
@@ -190,16 +190,16 @@ export default async function ListingDetailPage({
         <div className="grid grid-cols-1 lg:grid-cols-[55fr_45fr] gap-8 lg:gap-10">
           {/* Left: Image */}
           <div>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-4 md:p-6 sticky top-24">
-              <div className="aspect-[3/4] bg-gray-100 dark:bg-gray-700 rounded-xl overflow-hidden relative">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-4 md:p-6">
+              <div className="bg-gray-100 dark:bg-gray-700 rounded-xl overflow-hidden relative flex items-center justify-center min-h-48">
                 {item.image_url ? (
                   <img
                     src={item.image_url}
                     alt={item.title}
-                    className="w-full h-full object-contain"
+                    className="max-w-full max-h-[70vh] object-contain"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
+                  <div className="w-full py-24 flex items-center justify-center text-gray-400 dark:text-gray-500">
                     <svg
                       className="w-20 h-20"
                       fill="none"
@@ -292,16 +292,17 @@ export default async function ListingDetailPage({
             </div>
 
             {/* 4. Buy / Add to Cart buttons */}
-            <div className="flex flex-col gap-2.5 mt-5">
-              <button className="w-full py-3 bg-red-500 text-white font-semibold rounded-full hover:bg-red-600 transition-colors text-sm">
-                Buy It Now
-              </button>
-              <button className="w-full py-3 bg-blue-600 text-white font-semibold rounded-full hover:bg-blue-700 transition-colors text-sm">
-                Add to Cart
-              </button>
-              <button className="w-full py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-sm">
-                Add to Watchlist
-              </button>
+            <div className="mt-5">
+              <ListingActions
+                productId={item.id}
+                disabled={item.quantity <= 0 || item.price_cents == null}
+                stock={item.quantity}
+                itemTitle={item.title}
+                itemImage={item.image_url}
+                itemPrice={fmtPrice(item.price_cents, item.currency)}
+                crossSellItems={otherListings}
+                rates={rates}
+              />
             </div>
 
             <hr className="my-5 border-gray-200 dark:border-gray-700" />
