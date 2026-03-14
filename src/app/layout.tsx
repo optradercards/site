@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Bangers, Inter } from "next/font/google";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
@@ -53,32 +54,28 @@ export default async function RootLayout({
       className={`${inter.variable} ${bangers.variable}`}
       suppressHydrationWarning
     >
-      <head>
-        <script
+      <body
+        className={`${inter.className} antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}
+      >
+        <Script
+          id="theme-init"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const savedTheme = localStorage.getItem('theme');
-                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                const shouldBeDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
-                if (shouldBeDark) {
-                  document.documentElement.classList.add('dark');
-                }
+                var s = localStorage.getItem('theme');
+                var d = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                if (s === 'dark' || (!s && d)) document.documentElement.classList.add('dark');
               } catch (e) {}
             `,
           }}
         />
         {process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY && (
-          <script
+          <Script
             src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places`}
-            async
-            defer
+            strategy="lazyOnload"
           />
         )}
-      </head>
-      <body
-        className={`${inter.className} antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}
-      >
         <QueryProvider>
           <UserProvider user={user} isAdmin={isAdmin}>
             {children}

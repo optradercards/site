@@ -141,8 +141,9 @@ export default async function StorefrontPage({
       {/* Listings Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
         {items.map((listing) => (
-          <div
+          <Link
             key={listing.id}
+            href={`/listing/${listing.id}`}
             className="group bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden transition-all duration-200 hover:-translate-y-1 hover:shadow-lg"
           >
             {/* Card Image */}
@@ -214,7 +215,7 @@ export default async function StorefrontPage({
                 </p>
               )}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>
