@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import { Suspense } from 'react';
 import LoginClient from '@/components/LoginClient';
+
+export const metadata: Metadata = {
+  title: "Sign In",
+  description: "Sign in to your OP Trader account to buy, sell, and trade cards.",
+  robots: { index: false, follow: true },
+};
 
 export default function LoginPage() {
   return (

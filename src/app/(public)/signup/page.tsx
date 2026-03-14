@@ -1,5 +1,12 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import SignupClient from "@/components/SignupClient";
+
+export const metadata: Metadata = {
+  title: "Sign Up",
+  description: "Create an OP Trader account to start buying, selling, and trading cards.",
+  robots: { index: false, follow: true },
+};
 
 export default function SignupPage() {
   return (

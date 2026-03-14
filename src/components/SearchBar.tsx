@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,12 +17,19 @@ export default function SearchBar() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [isPending, startTransition] = useTransition();
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const skipFetchRef = useRef(false);
 
   // Fetch suggestions with debounce
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (skipFetchRef.current) {
+      skipFetchRef.current = false;
+      return;
+    }
 
     if (query.trim().length < 2) {
       setSuggestions([]);
@@ -60,15 +67,21 @@ export default function SearchBar() {
   }, []);
 
   function navigate(suggestion: Suggestion) {
+    skipFetchRef.current = true;
     setQuery(suggestion.label);
+    setSuggestions([]);
     setIsOpen(false);
+    let href: string;
     if (suggestion.type === "seller" && suggestion.slug) {
-      router.push(`/${suggestion.slug}`);
+      href = `/${suggestion.slug}`;
     } else if (suggestion.type === "set") {
-      router.push(`/search?set=${encodeURIComponent(suggestion.label)}`);
+      href = `/search?set=${encodeURIComponent(suggestion.label)}`;
     } else {
-      router.push(`/search?q=${encodeURIComponent(suggestion.label)}`);
+      href = `/search?q=${encodeURIComponent(suggestion.label)}`;
     }
+    startTransition(() => {
+      router.push(href);
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -77,7 +90,9 @@ export default function SearchBar() {
       navigate(suggestions[activeIndex]);
     } else if (query.trim()) {
       setIsOpen(false);
-      router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      startTransition(() => {
+        router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+      });
     }
   }
 
@@ -121,6 +136,35 @@ export default function SearchBar() {
 
   return (
     <div ref={containerRef} className="relative flex-1">
+      {/* Top loading bar */}
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 z-[100] h-1 bg-gray-200 dark:bg-gray-700 overflow-hidden">
+          <div className="h-full bg-red-500 animate-loading-bar" />
+          <style>{`
+            @keyframes loading-bar {
+              0% { width: 0%; margin-left: 0; }
+              30% { width: 40%; margin-left: 0; }
+              60% { width: 30%; margin-left: 50%; }
+              100% { width: 0%; margin-left: 100%; }
+            }
+            .animate-loading-bar {
+              animation: loading-bar 1.2s ease-in-out infinite;
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* Loading spinner pill */}
+      {isPending && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 bg-white dark:bg-gray-800 shadow-lg rounded-full px-5 py-2.5 border border-gray-200 dark:border-gray-700">
+          <svg className="w-5 h-5 text-red-500 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+          <span className="text-sm font-medium text-gray-600 dark:text-gray-300">Loading...</span>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="flex">
         <div className="relative flex-1">
           <svg
@@ -154,8 +198,15 @@ export default function SearchBar() {
         </div>
         <button
           type="submit"
-          className="px-6 py-2.5 bg-red-500 text-white text-sm font-semibold rounded-r-full hover:bg-red-600 transition-colors"
+          disabled={isPending}
+          className="px-6 py-2.5 bg-red-500 text-white text-sm font-semibold rounded-r-full hover:bg-red-600 transition-colors disabled:opacity-70 flex items-center gap-2"
         >
+          {isPending && (
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          )}
           Search
         </button>
       </form>

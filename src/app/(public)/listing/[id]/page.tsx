@@ -56,15 +56,29 @@ export async function generateMetadata({
   const { data } = await supabase
     .schema("ecom")
     .from("listings")
-    .select("title, set_name, seller_name")
+    .select("title, set_name, seller_name, image_url, price_cents, currency")
     .eq("id", id)
     .single();
 
-  if (!data) return { title: "Listing Not Found - OP Trader" };
+  if (!data) return { title: "Listing Not Found" };
+
+  const description = `Buy ${data.title} from ${data.seller_name} on OP Trader. ${data.set_name} trading card.`;
 
   return {
-    title: `${data.title} - ${data.set_name} | OP Trader`,
-    description: `Buy ${data.title} from ${data.seller_name} on OP Trader.`,
+    title: `${data.title} - ${data.set_name}`,
+    description,
+    openGraph: {
+      title: `${data.title} - ${data.set_name}`,
+      description,
+      type: "website",
+      ...(data.image_url && { images: [data.image_url] }),
+    },
+    twitter: {
+      card: data.image_url ? "summary_large_image" : "summary",
+      title: `${data.title} - ${data.set_name}`,
+      description,
+      ...(data.image_url && { images: [data.image_url] }),
+    },
   };
 }
 
@@ -116,8 +130,36 @@ export default async function ListingDetailPage({
   const fmtPrice = (cents: number | null, sourceCurrency: string) =>
     formatPrice(cents, displayCurrency, rates, sourceCurrency);
 
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://optrader.com.au";
+
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: item.title,
+    description: item.description || `${item.title} - ${item.set_name} trading card`,
+    ...(item.image_url && { image: item.image_url }),
+    brand: { "@type": "Brand", name: item.brand_name },
+    category: item.set_name,
+    ...(item.price_cents != null && {
+      offers: {
+        "@type": "Offer",
+        price: (item.price_cents / 100).toFixed(2),
+        priceCurrency: item.currency,
+        availability: item.quantity > 0
+          ? "https://schema.org/InStock"
+          : "https://schema.org/OutOfStock",
+        seller: { "@type": "Organization", name: item.seller_name },
+        url: `${baseUrl}/listing/${item.id}`,
+      },
+    }),
+  };
+
   return (
     <div className="bg-gray-50 dark:bg-gray-900 py-6 md:py-10">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <div className="container mx-auto px-4">
         {/* Breadcrumb */}
         <nav className="text-sm text-gray-500 dark:text-gray-400 mb-6 flex items-center gap-1.5 flex-wrap">

@@ -19,9 +19,34 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "OP Trader - One Piece TCG Marketplace",
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "https://optrader.com.au"
+  ),
+  title: {
+    default: "OP Trader - Australia's Premier TCG Marketplace",
+    template: "%s | OP Trader",
+  },
   description:
-    "The premier marketplace for One Piece Trading Card Game collectors to buy, sell, and trade cards.",
+    "Find, buy, sell, and trade One Piece trading cards on Australia's premier TCG marketplace.",
+  openGraph: {
+    type: "website",
+    siteName: "OP Trader",
+    title: "OP Trader - Australia's Premier TCG Marketplace",
+    description:
+      "Find, buy, sell, and trade One Piece trading cards on Australia's premier TCG marketplace.",
+    images: ["/logos/OP_Trader_FullLogo.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "OP Trader - Australia's Premier TCG Marketplace",
+    description:
+      "Find, buy, sell, and trade One Piece trading cards on Australia's premier TCG marketplace.",
+    images: ["/logos/OP_Trader_FullLogo.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default async function RootLayout({
