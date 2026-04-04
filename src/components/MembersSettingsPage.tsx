@@ -21,7 +21,11 @@ export default function MembersSettingsPage() {
   const removeMember = useRemoveMember();
 
   const [inviteRole, setInviteRole] = useState("member");
+  const [inviteEmail, setInviteEmail] = useState("");
   const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   if (!isDealer) {
     return (
@@ -50,6 +54,31 @@ export default function MembersSettingsPage() {
       }
     } catch {
       // Error is handled by the mutation state
+    }
+  };
+
+  const handleEmailInvite = async () => {
+    if (!activeAccountId || !inviteEmail.trim()) return;
+    setEmailSending(true);
+    setEmailError(null);
+    setEmailSent(false);
+    try {
+      const res = await fetch("/api/invitations/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: activeAccountId, email: inviteEmail.trim(), role: inviteRole }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setEmailError(data.error || "Failed to send invite email.");
+      } else {
+        setEmailSent(true);
+        setInviteEmail("");
+      }
+    } catch {
+      setEmailError("Network error. Please try again.");
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -124,27 +153,64 @@ export default function MembersSettingsPage() {
           Invite New Member
         </h3>
 
-        <div className="flex items-end gap-3">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Role
-            </label>
-            <select
-              value={inviteRole}
-              onChange={(e) => setInviteRole(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="member">Member</option>
-              <option value="owner">Owner</option>
-            </select>
+        <div className="space-y-3">
+          <div className="flex items-end gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Role
+              </label>
+              <select
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value)}
+                className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="member">Member</option>
+                <option value="owner">Owner</option>
+              </select>
+            </div>
           </div>
-          <button
-            onClick={handleInvite}
-            disabled={inviteMember.isPending}
-            className="px-6 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white font-semibold rounded-lg transition-colors"
-          >
-            {inviteMember.isPending ? "Generating..." : "Generate Invite Link"}
-          </button>
+
+          {/* Email invite */}
+          <div className="flex items-end gap-3">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Email address
+              </label>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="colleague@example.com"
+                className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+            <button
+              onClick={handleEmailInvite}
+              disabled={emailSending || !inviteEmail.trim()}
+              className="px-5 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white font-semibold rounded-lg transition-colors whitespace-nowrap"
+            >
+              {emailSending ? "Sending..." : "Send Email Invite"}
+            </button>
+          </div>
+
+          {emailSent && (
+            <p className="text-sm text-green-600 dark:text-green-400">✓ Invite email sent!</p>
+          )}
+          {emailError && (
+            <p className="text-sm text-red-600 dark:text-red-400">{emailError}</p>
+          )}
+
+          {/* Copy link (secondary) */}
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={handleInvite}
+              disabled={inviteMember.isPending}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-sm font-medium rounded-lg transition-colors"
+            >
+              {inviteMember.isPending ? "Generating..." : "Copy Invite Link"}
+            </button>
+            <span className="text-xs text-gray-400">No email — just share the link manually</span>
+          </div>
         </div>
 
         {inviteMember.isError && (
@@ -156,8 +222,7 @@ export default function MembersSettingsPage() {
         {generatedToken && (
           <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
             <p className="text-sm text-green-800 dark:text-green-300 mb-2">
-              Invite link generated! Share this with your team member (expires
-              in 24 hours):
+              Invite link generated! Share this with your team member (expires in 7 days):
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-xs bg-white dark:bg-gray-800 p-2 rounded border border-green-300 dark:border-green-700 truncate">
