@@ -31,7 +31,7 @@ export default function InvitationAcceptClient({ token }: Props) {
       if (typeof window !== "undefined" && result.account_id) {
         localStorage.setItem(ACTIVE_ACCOUNT_KEY, result.account_id);
       }
-      const target = result.slug ? `/${result.slug}/dashboard` : "/";
+      const target = result.slug ? `/${result.slug}/manage` : "/";
       router.push(target);
     } catch (err) {
       setAcceptError(

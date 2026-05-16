@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 interface ImportLog {
   id: string;
-  account_id: string;
+  account_id: string | null;
   platform: string;
   handle: string | null;
   status: "pending" | "running" | "completed" | "failed";
@@ -27,6 +27,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   "shiny-collections": "Shiny Collections",
   "shiny-accounts": "Shiny Accounts",
   "shiny-history": "Shiny History",
+  "daily-shiny-sync": "Daily Shiny Sync",
+  "daily-snapshot": "Daily Snapshot",
 };
 
 const STATUS_STYLES: Record<string, string> = {

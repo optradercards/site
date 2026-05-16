@@ -37,7 +37,7 @@ export default function SiteHeader() {
     formatPrice(cents, displayCurrency, rates ?? {}, sourceCurrency);
 
   const dashboardHref = activeAccount?.slug
-    ? `/${activeAccount.slug}/dashboard`
+    ? `/${activeAccount.slug}/manage`
     : "/";
   const manageHref =
     isDealer && activeAccount?.slug
