@@ -89,7 +89,21 @@ export default function AccountSetupModal() {
           setAvatarUrl(null); // Will fetch from profile if exists
         }
       } catch (err) {
-        console.error("Error checking account setup:", err);
+        const e = err as {
+          message?: string;
+          code?: string;
+          details?: string;
+          hint?: string;
+          status?: number;
+        };
+        console.error("Error checking account setup:", {
+          message: e?.message,
+          code: e?.code,
+          details: e?.details,
+          hint: e?.hint,
+          status: e?.status,
+          raw: err,
+        });
         setShowModal(false);
       } finally {
         setLoading(false);
