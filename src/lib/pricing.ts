@@ -56,6 +56,10 @@ export type EcomListing = {
   seller_name: string;
   created_at: string;
   updated_at: string;
+  product_kind: "single" | "sealed";
+  is_foil: boolean;
+  is_variant_edition: boolean;
+  is_case: boolean;
 };
 
 export type PricingConfig = {

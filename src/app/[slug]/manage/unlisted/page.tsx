@@ -422,6 +422,7 @@ export default function UnlistedPage() {
 
     let created = 0;
     let errors = 0;
+    let duplicates = 0;
 
     for (const r of rows) {
       if (!selectedItems.has(r.item.instance_id)) continue;
@@ -452,14 +453,22 @@ export default function UnlistedPage() {
         .from("products")
         .insert(row);
 
-      if (error) errors++;
-      else created++;
+      if (error) {
+        if (error.code === "23505") duplicates++;
+        else errors++;
+      } else {
+        created++;
+      }
     }
 
-    if (errors > 0) {
-      setSubmitError(
-        `Created ${created} listing(s) with ${errors} error(s).`
-      );
+    if (errors > 0 || duplicates > 0) {
+      const parts: string[] = [`Created ${created} listing(s)`];
+      if (duplicates > 0)
+        parts.push(
+          `${duplicates} skipped (already listed at this grade)`
+        );
+      if (errors > 0) parts.push(`${errors} error(s)`);
+      setSubmitError(parts.join(", ") + ".");
     }
 
     setStagedMap(new Map());

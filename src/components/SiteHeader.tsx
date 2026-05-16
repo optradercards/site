@@ -6,19 +6,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/contexts/UserContext";
+import { useAccounts } from "@/contexts/AccountContext";
 import { useCart, useCartCount, useRemoveFromCart } from "@/hooks/useCart";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
-import { formatPrice } from "@/lib/currency";
+import { useProfile } from "@/hooks/useProfile";
+import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import SearchBar from "@/components/SearchBar";
+import CurrencySwitcher from "@/components/CurrencySwitcher";
 
 
 export default function SiteHeader() {
-  const { user } = useUser();
+  const { user, isAdmin } = useUser();
+  const { activeAccount, accounts, personalAccount, isDealer, switchAccount } =
+    useAccounts();
   const router = useRouter();
   const supabase = createClient();
   const { data: cartCount } = useCartCount();
   const { data: cartItems } = useCart();
   const { data: rates } = useExchangeRates();
+  const { data: profileData } = useProfile();
   const removeFromCart = useRemoveFromCart();
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -26,9 +32,24 @@ export default function SiteHeader() {
   const accountRef = useRef<HTMLDivElement>(null);
   const cartRef = useRef<HTMLDivElement>(null);
 
-  const displayCurrency = "AUD";
+  const displayCurrency = profileData?.profile?.default_currency ?? "AUD";
   const fmtPrice = (cents: number | null, sourceCurrency: string) =>
     formatPrice(cents, displayCurrency, rates ?? {}, sourceCurrency);
+
+  const dashboardHref = activeAccount?.slug
+    ? `/${activeAccount.slug}/dashboard`
+    : "/";
+  const manageHref =
+    isDealer && activeAccount?.slug
+      ? `/${activeAccount.slug}/manage`
+      : null;
+  const teamAccounts = accounts.filter((a) => !a.personal_account);
+
+  const handleAccountSwitch = (accountId: string, slug: string | null) => {
+    switchAccount(accountId);
+    setIsAccountOpen(false);
+    if (slug) router.push(`/${slug}/manage`);
+  };
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -74,7 +95,78 @@ export default function SiteHeader() {
                   </svg>
                 </button>
                 {isAccountOpen && (
-                  <div className="absolute left-0 mt-1.5 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 py-1 text-sm">
+                  <div className="absolute left-0 mt-1.5 w-60 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 py-1 text-sm">
+                    {activeAccount?.slug && (
+                      <Link
+                        href={dashboardHref}
+                        onClick={() => setIsAccountOpen(false)}
+                        className="block px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Dashboard
+                      </Link>
+                    )}
+                    {manageHref && (
+                      <Link
+                        href={manageHref}
+                        onClick={() => setIsAccountOpen(false)}
+                        className="block px-4 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Manage Store
+                      </Link>
+                    )}
+                    {isAdmin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setIsAccountOpen(false)}
+                        className="block px-4 py-2 text-yellow-700 dark:text-yellow-400 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        Admin Panel
+                      </Link>
+                    )}
+                    {(activeAccount?.slug || manageHref || isAdmin) && (
+                      <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                    )}
+                    {accounts.length > 1 && (
+                      <>
+                        <div className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                          Switch Account
+                        </div>
+                        {personalAccount && (
+                          <button
+                            onClick={() =>
+                              handleAccountSwitch(
+                                personalAccount.account_id,
+                                personalAccount.slug
+                              )
+                            }
+                            className={`block w-full text-left px-4 py-2 transition-colors ${
+                              activeAccount?.account_id ===
+                              personalAccount.account_id
+                                ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
+                                : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            My Collection
+                          </button>
+                        )}
+                        {teamAccounts.map((acct) => (
+                          <button
+                            key={acct.account_id}
+                            onClick={() =>
+                              handleAccountSwitch(acct.account_id, acct.slug)
+                            }
+                            className={`block w-full text-left px-4 py-2 transition-colors ${
+                              activeAccount?.account_id === acct.account_id
+                                ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400"
+                                : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                            }`}
+                          >
+                            {acct.name || acct.slug}
+                          </button>
+                        ))}
+                        <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+                      </>
+                    )}
                     <Link
                       href="/settings/profile"
                       onClick={() => setIsAccountOpen(false)}
@@ -143,10 +235,10 @@ export default function SiteHeader() {
             <span className="text-gray-600">|</span>
             {user ? (
               <Link
-                href="/settings/profile"
+                href={dashboardHref}
                 className="text-gray-300 hover:text-white transition-colors"
               >
-                My OP Trader
+                Dashboard
               </Link>
             ) : (
               <Link
@@ -157,6 +249,12 @@ export default function SiteHeader() {
               </Link>
             )}
             <span className="text-gray-600">|</span>
+            {user && (
+              <>
+                <CurrencySwitcher />
+                <span className="text-gray-600">|</span>
+              </>
+            )}
             <Link
               href={user ? "/notifications" : "/login"}
               className="text-gray-300 hover:text-white transition-colors inline-flex items-center gap-1"
@@ -253,13 +351,26 @@ export default function SiteHeader() {
                         <div className="flex items-center justify-between mb-2.5">
                           <span className="text-xs text-gray-500 dark:text-gray-400">Subtotal</span>
                           <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
-                            A${((cartItems.reduce((sum, item) => {
-                              if (item.price_cents == null) return sum;
-                              const from = item.currency.toLowerCase();
-                              const fromRate = from === "usd" ? 1 : (rates?.[from] ?? 1);
-                              const toRate = rates?.["aud"] ?? 1;
-                              return sum + (item.price_cents * item.quantity * toRate) / fromRate;
-                            }, 0)) / 100).toFixed(2)}
+                            {(() => {
+                              const to = displayCurrency.toLowerCase();
+                              const toRate = to === "usd" ? 1 : (rates?.[to] ?? 1);
+                              const symbol =
+                                SUPPORTED_CURRENCIES.find(
+                                  (c) => c.code === displayCurrency
+                                )?.symbol ?? "$";
+                              const total = cartItems.reduce((sum, item) => {
+                                if (item.price_cents == null) return sum;
+                                const from = item.currency.toLowerCase();
+                                const fromRate =
+                                  from === "usd" ? 1 : (rates?.[from] ?? 1);
+                                return (
+                                  sum +
+                                  (item.price_cents * item.quantity * toRate) /
+                                    fromRate
+                                );
+                              }, 0);
+                              return `${symbol}${(total / 100).toFixed(2)}`;
+                            })()}
                           </span>
                         </div>
                         <Link
@@ -286,8 +397,8 @@ export default function SiteHeader() {
             <Image
               src="/logos/OP_Trader_FullLogo.png"
               alt="OP Trader"
-              width={220}
-              height={44}
+              width={2501}
+              height={525}
               priority
               className="h-8 md:h-11 w-auto"
             />
@@ -357,15 +468,39 @@ export default function SiteHeader() {
                   <li className="px-3 py-2 text-sm text-gray-400 font-medium">
                     Hi, {displayName}
                   </li>
-                  <li>
-                    <Link
-                      href="/settings/profile"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className="block px-3 py-2.5 rounded-lg text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
-                    >
-                      My OP Trader
-                    </Link>
-                  </li>
+                  {activeAccount?.slug && (
+                    <li>
+                      <Link
+                        href={dashboardHref}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="block px-3 py-2.5 rounded-lg text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
+                      >
+                        Dashboard
+                      </Link>
+                    </li>
+                  )}
+                  {manageHref && (
+                    <li>
+                      <Link
+                        href={manageHref}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="block px-3 py-2.5 rounded-lg text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
+                      >
+                        Manage Store
+                      </Link>
+                    </li>
+                  )}
+                  {isAdmin && (
+                    <li>
+                      <Link
+                        href="/admin"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        className="block px-3 py-2.5 rounded-lg text-yellow-400 font-medium hover:bg-gray-700 hover:text-yellow-300 transition-colors"
+                      >
+                        Admin Panel
+                      </Link>
+                    </li>
+                  )}
                   <li>
                     <Link
                       href="/settings/profile"

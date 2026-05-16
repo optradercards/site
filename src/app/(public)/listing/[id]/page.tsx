@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import ListingActions from "@/components/ListingActions";
+import ProductBadges from "@/components/ProductBadges";
 
 type Listing = {
   id: string;
@@ -29,6 +30,10 @@ type Listing = {
   status: string;
   created_at: string;
   updated_at: string;
+  product_kind: "single" | "sealed";
+  is_foil: boolean;
+  is_variant_edition: boolean;
+  is_case: boolean;
 };
 
 type SellerLocation = {
@@ -429,6 +434,23 @@ export default async function ListingDetailPage({
               <div className="flex gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700">
                 <dt className="text-gray-500 dark:text-gray-400 w-32 shrink-0">Rarity</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{item.rarity}</dd>
+              </div>
+            )}
+            {(item.product_kind === "sealed" ||
+              item.is_foil ||
+              item.is_variant_edition ||
+              item.is_case) && (
+              <div className="flex gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700">
+                <dt className="text-gray-500 dark:text-gray-400 w-32 shrink-0">Type</dt>
+                <dd className="font-medium text-gray-900 dark:text-gray-100">
+                  <ProductBadges
+                    productKind={item.product_kind}
+                    isFoil={item.is_foil}
+                    isVariantEdition={item.is_variant_edition}
+                    isCase={item.is_case}
+                    size="md"
+                  />
+                </dd>
               </div>
             )}
             <div className="flex gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700">

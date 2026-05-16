@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import MarketplaceSearch from "@/components/MarketplaceSearch";
+import ProductBadges from "@/components/ProductBadges";
 
 export const metadata: Metadata = {
   title: "Search Listings - OP Trader",
@@ -29,6 +30,10 @@ type Listing = {
   seller_slug: string;
   seller_name: string;
   quantity: number;
+  product_kind: "single" | "sealed";
+  is_foil: boolean;
+  is_variant_edition: boolean;
+  is_case: boolean;
 };
 
 const PAGE_SIZE = 40;
@@ -283,6 +288,13 @@ export default async function SearchPage({
                         {listing.set_name}
                         {listing.card_number && ` #${listing.card_number}`}
                       </p>
+                      <ProductBadges
+                        productKind={listing.product_kind}
+                        isFoil={listing.is_foil}
+                        isVariantEdition={listing.is_variant_edition}
+                        isCase={listing.is_case}
+                        className="mt-1"
+                      />
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[10px] text-gray-400 dark:text-gray-500 truncate">
                           {listing.seller_name}

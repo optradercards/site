@@ -56,9 +56,12 @@ export default function SignupClient() {
     setMessage(null);
 
     try {
+      const returnUrl = searchParams.get("returnUrl");
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
+          ? `${window.location.origin}/auth/callback${
+              returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ""
+            }`
           : undefined;
 
       const { error } = await supabase.auth.signInWithOtp({

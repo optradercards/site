@@ -7,7 +7,10 @@ export interface CardWithDetails {
   rarity: string | null;
   product_code: string | null;
   total_count: string | null;
-  follower_count: number | null;
+  product_kind: "single" | "sealed";
+  is_foil: boolean;
+  is_variant_edition: boolean;
+  is_case: boolean;
   purchase_unit_count: number | null;
   unit_change_cents: number | null;
   unit_change_percent: number | null;

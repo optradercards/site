@@ -62,9 +62,12 @@ export default function LoginClient() {
     setMessage(null);
 
     try {
+      const returnUrl = searchParams.get("returnUrl");
       const redirectTo =
         typeof window !== "undefined"
-          ? `${window.location.origin}/auth/callback`
+          ? `${window.location.origin}/auth/callback${
+              returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ""
+            }`
           : undefined;
 
       const { error } = await supabase.auth.signInWithOtp({
@@ -85,8 +88,9 @@ export default function LoginClient() {
           errorMessage.includes("user does not exist") ||
           errorMessage.includes("signups not allowed")
         ) {
-          // Redirect to signup page
-          router.push(`/signup?email=${encodeURIComponent(data.email)}`);
+          const params = new URLSearchParams({ email: data.email });
+          if (returnUrl) params.set("returnUrl", returnUrl);
+          router.push(`/signup?${params.toString()}`);
           return;
         }
         setError(normalizeError(error));

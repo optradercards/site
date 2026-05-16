@@ -14,7 +14,7 @@ interface CardRow {
   image_url: string | null;
   ungraded_price: number | null;
   psa_10_price: number | null;
-  follower_count: number | null;
+  product_kind: "single" | "sealed";
 }
 
 function formatPrice(cents: number | null): string {
@@ -105,7 +105,7 @@ export default function ProductsPage() {
                   <th className="px-4 py-3">Brand</th>
                   <th className="px-4 py-3">Ungraded</th>
                   <th className="px-4 py-3">PSA 10</th>
-                  <th className="px-4 py-3">Followers</th>
+                  <th className="px-4 py-3">Type</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 dark:text-gray-300">
@@ -152,7 +152,15 @@ export default function ProductsPage() {
                       {formatPrice(card.psa_10_price)}
                     </td>
                     <td className="px-4 py-2">
-                      {card.follower_count ?? "—"}
+                      <span
+                        className={`inline-block px-2 py-0.5 rounded text-xs font-medium capitalize ${
+                          card.product_kind === "sealed"
+                            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                            : "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                        }`}
+                      >
+                        {card.product_kind}
+                      </span>
                     </td>
                   </tr>
                 ))}

@@ -4,6 +4,7 @@ import { Bangers, Inter } from "next/font/google";
 import "./globals.css";
 import { createClient } from "@/lib/supabase/server";
 import { UserProvider } from "@/contexts/UserContext";
+import { AccountProvider } from "@/contexts/AccountContext";
 import { QueryProvider } from "@/components/QueryProvider";
 import { Toaster } from "sonner";
 
@@ -76,35 +77,23 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${bangers.variable}`}
-      suppressHydrationWarning
+      className={`${inter.variable} ${bangers.variable} dark`}
     >
       <body
         className={`${inter.className} antialiased bg-gray-50 text-gray-900 dark:bg-gray-900 dark:text-gray-100`}
       >
-        <Script
-          id="theme-init"
-          strategy="beforeInteractive"
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                var s = localStorage.getItem('theme');
-                var d = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                if (s === 'dark' || (!s && d)) document.documentElement.classList.add('dark');
-              } catch (e) {}
-            `,
-          }}
-        />
         {process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY && (
           <Script
-            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places`}
+            src={`https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY}&libraries=places&loading=async`}
             strategy="lazyOnload"
           />
         )}
         <QueryProvider>
           <UserProvider user={user} isAdmin={isAdmin}>
-            {children}
-            <Toaster richColors position="top-right" />
+            <AccountProvider>
+              {children}
+              <Toaster richColors position="top-right" />
+            </AccountProvider>
           </UserProvider>
         </QueryProvider>
       </body>

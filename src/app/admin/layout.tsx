@@ -37,6 +37,7 @@ const adminNavItems: NavItem[] = [
     icon: "📦",
     children: [
       { href: "/admin/orders", label: "Orders", icon: "🛒" },
+      { href: "/admin/reconciliation", label: "Reconciliation", icon: "🔍" },
     ],
   },
   {

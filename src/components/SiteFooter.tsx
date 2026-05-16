@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { subscribeToNewsletter } from "@/lib/newsletter";
 
 export default function SiteFooter() {
@@ -12,6 +12,8 @@ export default function SiteFooter() {
   const [messageType, setMessageType] = useState<"success" | "error">(
     "success"
   );
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleSubscribe = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,21 +54,40 @@ export default function SiteFooter() {
             </div>
             <form onSubmit={handleSubscribe} className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={isLoading}
-                  className="flex-1 px-4 py-2 rounded bg-gray-700 dark:bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                />
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isLoading ? "Subscribing..." : "Subscribe"}
-                </button>
+                {mounted ? (
+                  <>
+                    <input
+                      type="email"
+                      name="newsletter-email"
+                      placeholder="Enter your email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={isLoading}
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
+                      className="flex-1 px-4 py-2 rounded bg-gray-700 dark:bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isLoading}
+                      className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? "Subscribing..." : "Subscribe"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div
+                      aria-hidden
+                      className="flex-1 h-[42px] rounded bg-gray-700 dark:bg-gray-800"
+                    />
+                    <div
+                      aria-hidden
+                      className="h-[42px] w-[120px] rounded bg-red-500"
+                    />
+                  </>
+                )}
               </div>
               {message && (
                 <p
@@ -89,8 +110,8 @@ export default function SiteFooter() {
               <Image
                 src="/logos/OP_Trader_FullLogo.png"
                 alt="OP Trader"
-                width={220}
-                height={44}
+                width={2501}
+                height={525}
                 className="h-11 w-auto"
               />
             </Link>

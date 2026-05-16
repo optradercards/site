@@ -1,3 +1,4 @@
+/// <reference types="google.maps" />
 import usePlacesAutocomplete, {
   getGeocode,
   getLatLng,
@@ -52,7 +53,7 @@ export function useAddressAutocomplete() {
           lng,
         };
 
-        addressComponents.forEach((component) => {
+        addressComponents.forEach((component: google.maps.GeocoderAddressComponent) => {
           const types = component.types;
 
           if (types.includes("street_number")) {

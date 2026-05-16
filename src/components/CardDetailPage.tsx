@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
+import ProductBadges from "@/components/ProductBadges";
 import type {
   CardWithDetails,
   RecentPurchase,
@@ -278,11 +279,17 @@ export default function CardDetailPage() {
             <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Followers
+                  Type
                 </p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {card.follower_count ?? "—"}
+                <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
+                  {card.product_kind}
                 </p>
+                <ProductBadges
+                  isFoil={card.is_foil}
+                  isVariantEdition={card.is_variant_edition}
+                  isCase={card.is_case}
+                  className="mt-1"
+                />
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -430,9 +437,10 @@ export default function CardDetailPage() {
                       width={60}
                     />
                     <Tooltip
-                      formatter={(value: number | undefined) => {
+                      formatter={(value) => {
                         const sym = SUPPORTED_CURRENCIES.find((c) => c.code === currency)?.symbol ?? "$";
-                        return value != null ? `${sym}${value.toFixed(2)}` : "\u2014";
+                        const n = typeof value === "number" ? value : Number(value);
+                        return Number.isFinite(n) ? `${sym}${n.toFixed(2)}` : "\u2014";
                       }}
                       labelFormatter={(d) =>
                         new Date(String(d)).toLocaleDateString("en-US", {
