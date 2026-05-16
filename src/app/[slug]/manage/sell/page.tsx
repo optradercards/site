@@ -199,15 +199,26 @@ export default function SellPage() {
     setItems((prev) => prev.filter((i) => i.key !== key));
   }, []);
 
+  const outbound = useMemo(
+    () => items.filter((it) => it.side === "sold" || it.side === "traded_out"),
+    [items]
+  );
+  const inbound = useMemo(
+    () => items.filter((it) => it.side === "bought" || it.side === "traded_in"),
+    [items]
+  );
+
   const totals = useMemo(() => {
-    const net = items.reduce((sum, it) => {
-      if (it.side === "sold" || it.side === "traded_out") {
-        return sum + it.unit_price_cents * it.quantity;
-      }
-      return sum - it.unit_price_cents * it.quantity;
-    }, 0);
-    return { net_cents: net };
-  }, [items]);
+    const out = outbound.reduce(
+      (sum, it) => sum + it.unit_price_cents * it.quantity,
+      0
+    );
+    const inc = inbound.reduce(
+      (sum, it) => sum + it.unit_price_cents * it.quantity,
+      0
+    );
+    return { out_cents: out, in_cents: inc, net_cents: out - inc };
+  }, [outbound, inbound]);
 
   // --- Buyer + payment ---------------------------------------------------
   const [buyerName, setBuyerName] = useState("");
@@ -508,101 +519,26 @@ export default function SellPage() {
               Tap a card to add it.
             </p>
           ) : (
-            <ul className="space-y-2 divide-y divide-gray-100 dark:divide-gray-700">
-              {items.map((it) => {
-                const isOutbound = it.side === "sold" || it.side === "traded_out";
-                return (
-                  <li key={it.key} className="pt-2 first:pt-0 space-y-1.5">
-                    <div className="flex items-start gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 dark:text-gray-200 line-clamp-1">
-                          {it.card_name}
-                        </p>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                          {it.listing_id
-                            ? gradeLabel(it.grading_service, it.grade)
-                            : "Trade-in (from buyer)"}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => removeItem(it.key)}
-                        className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
-                        aria-label="Remove"
-                      >
-                        ×
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <div className="inline-flex items-center rounded border border-gray-200 dark:border-gray-700">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateItem(it.key, {
-                              quantity: Math.max(1, it.quantity - 1),
-                            })
-                          }
-                          className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                        >
-                          −
-                        </button>
-                        <span className="px-2 py-1 min-w-[2rem] text-center text-gray-800 dark:text-gray-200">
-                          {it.quantity}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateItem(it.key, {
-                              quantity: Math.min(
-                                it.max_available,
-                                it.quantity + 1
-                              ),
-                            })
-                          }
-                          className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                          disabled={it.quantity >= it.max_available}
-                        >
-                          +
-                        </button>
-                      </div>
-                      <input
-                        type="number"
-                        value={(it.unit_price_cents / 100).toFixed(2)}
-                        onChange={(e) =>
-                          updateItem(it.key, {
-                            unit_price_cents: Math.round(
-                              parseFloat(e.target.value || "0") * 100
-                            ),
-                          })
-                        }
-                        step="0.01"
-                        min="0"
-                        className="w-24 px-2 py-1 text-right rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-                      />
-                      <select
-                        value={it.side}
-                        onChange={(e) =>
-                          updateItem(it.key, {
-                            side: e.target.value as ItemSide,
-                          })
-                        }
-                        className={`px-2 py-1 rounded border text-[11px] font-medium ${
-                          isOutbound
-                            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
-                            : "border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300"
-                        }`}
-                      >
-                        {SIDES.map((s) => (
-                          <option key={s} value={s}>
-                            {SIDE_LABEL[s]}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="space-y-4">
+              <ItemGroup
+                label="Going out (to buyer)"
+                tone="out"
+                items={outbound}
+                subtotalCents={totals.out_cents}
+                currency={currency}
+                onUpdate={updateItem}
+                onRemove={removeItem}
+              />
+              <ItemGroup
+                label="Coming in (from buyer)"
+                tone="in"
+                items={inbound}
+                subtotalCents={totals.in_cents}
+                currency={currency}
+                onUpdate={updateItem}
+                onRemove={removeItem}
+              />
+            </div>
           )}
 
           <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
@@ -612,7 +548,9 @@ export default function SellPage() {
                   ? "Buyer pays"
                   : totals.net_cents < 0
                     ? "We pay buyer"
-                    : "Even trade"}
+                    : items.length === 0
+                      ? "Total"
+                      : "Even trade"}
               </span>
               <span className="text-gray-900 dark:text-gray-100">
                 {formatPrice(Math.abs(totals.net_cents), currency, {}, currency)}
@@ -707,5 +645,131 @@ export default function SellPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function ItemGroup({
+  label,
+  tone,
+  items,
+  subtotalCents,
+  currency,
+  onUpdate,
+  onRemove,
+}: {
+  label: string;
+  tone: "out" | "in";
+  items: DraftItem[];
+  subtotalCents: number;
+  currency: string;
+  onUpdate: (key: string, patch: Partial<DraftItem>) => void;
+  onRemove: (key: string) => void;
+}) {
+  const headerClass =
+    tone === "out"
+      ? "text-red-700 dark:text-red-300"
+      : "text-green-700 dark:text-green-300";
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-1.5">
+        <h3 className={`text-xs font-semibold uppercase tracking-wide ${headerClass}`}>
+          {label}
+        </h3>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {items.length === 0
+            ? "—"
+            : formatPrice(subtotalCents, currency, {}, currency)}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-[11px] text-gray-400 dark:text-gray-500 italic py-2">
+          Nothing here yet.
+        </p>
+      ) : (
+        <ul className="space-y-2 divide-y divide-gray-100 dark:divide-gray-700">
+          {items.map((it) => (
+            <li key={it.key} className="pt-2 first:pt-0 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 line-clamp-1">
+                    {it.card_name}
+                  </p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                    {it.listing_id
+                      ? gradeLabel(it.grading_service, it.grade)
+                      : "Trade-in (from buyer)"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onRemove(it.key)}
+                  className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
+                  aria-label="Remove"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <div className="inline-flex items-center rounded border border-gray-200 dark:border-gray-700">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdate(it.key, {
+                        quantity: Math.max(1, it.quantity - 1),
+                      })
+                    }
+                    className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    −
+                  </button>
+                  <span className="px-2 py-1 min-w-[2rem] text-center text-gray-800 dark:text-gray-200">
+                    {it.quantity}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onUpdate(it.key, {
+                        quantity: Math.min(it.max_available, it.quantity + 1),
+                      })
+                    }
+                    className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    disabled={it.quantity >= it.max_available}
+                  >
+                    +
+                  </button>
+                </div>
+                <input
+                  type="number"
+                  value={(it.unit_price_cents / 100).toFixed(2)}
+                  onChange={(e) =>
+                    onUpdate(it.key, {
+                      unit_price_cents: Math.round(
+                        parseFloat(e.target.value || "0") * 100
+                      ),
+                    })
+                  }
+                  step="0.01"
+                  min="0"
+                  className="w-24 px-2 py-1 text-right rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                />
+                <select
+                  value={it.side}
+                  onChange={(e) =>
+                    onUpdate(it.key, { side: e.target.value as ItemSide })
+                  }
+                  className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[11px]"
+                >
+                  {SIDES.map((s) => (
+                    <option key={s} value={s}>
+                      {SIDE_LABEL[s]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
