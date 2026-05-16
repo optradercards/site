@@ -82,6 +82,7 @@ function buildNavItems(isDealer: boolean): NavItem[] {
       label: "Store",
       icon: "🏪",
       children: [
+        { href: "/manage/sell", label: "Sell", icon: "💰" },
         { href: "/manage/listings", label: "Listings", icon: "🏪" },
         { href: "/manage/unlisted", label: "Add Listings", icon: "🏷️" },
         { href: "/manage/labels", label: "Labels", icon: "🖨️" },
