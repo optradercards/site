@@ -17,6 +17,7 @@ interface ImportLog {
   created_at: string;
   depends_on: string[] | null;
   dag_id: string | null;
+  parent_id: string | null;
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -27,6 +28,9 @@ const PLATFORM_LABELS: Record<string, string> = {
   "shiny-collections": "Shiny Collections",
   "shiny-accounts": "Shiny Accounts",
   "shiny-history": "Shiny History",
+  "shiny-discover-catalog": "Catalog Discovery",
+  "shiny-discover-brand": "Brand Discovery",
+  "resync-images": "Image Resync",
   "daily-shiny-sync": "Daily Shiny Sync",
   "daily-snapshot": "Daily Snapshot",
 };
@@ -104,14 +108,14 @@ function pipelineStatusStyle(logs: ImportLog[]): string {
 
 function JobRow({
   log,
-  indent,
+  depth = 0,
   expandedError,
   setExpandedError,
   onRetry,
   isRetrying,
 }: {
   log: ImportLog;
-  indent?: boolean;
+  depth?: number;
   expandedError: string | null;
   setExpandedError: (id: string | null) => void;
   onRetry: (id: string) => void;
@@ -120,7 +124,18 @@ function JobRow({
   return (
     <tr className="border-b border-gray-100 dark:border-gray-700/50">
       <td className="px-4 py-3 whitespace-nowrap">
-        {indent && <span className="inline-block w-4" />}
+        {depth > 0 && (
+          <span
+            className="inline-block"
+            style={{ width: `${depth * 16}px` }}
+            aria-hidden="true"
+          />
+        )}
+        {depth > 0 && (
+          <span className="inline-block w-3 text-gray-300 dark:text-gray-600 mr-1">
+            └
+          </span>
+        )}
         {new Date(log.created_at).toLocaleDateString()}{" "}
         <span className="text-gray-400 dark:text-gray-500">
           {new Date(log.created_at).toLocaleTimeString([], {
@@ -245,20 +260,64 @@ function PipelineGroup({
         <td className="px-4 py-3 text-xs">—</td>
         <td className="px-4 py-3" />
       </tr>
-      {expanded &&
-        logs.map((log) => (
-          <JobRow
-            key={log.id}
-            log={log}
-            indent
-            expandedError={expandedError}
-            setExpandedError={setExpandedError}
-            onRetry={onRetry}
-            isRetrying={retrying.has(log.id)}
-          />
-        ))}
+      {expanded && renderTree(logs, {
+        expandedError,
+        setExpandedError,
+        onRetry,
+        retrying,
+      })}
     </>
   );
+}
+
+// Render logs as a nested tree using parent_id. Roots within the group
+// are those whose parent_id is null or points outside the group.
+function renderTree(
+  logs: ImportLog[],
+  ctx: {
+    expandedError: string | null;
+    setExpandedError: (id: string | null) => void;
+    onRetry: (id: string) => void;
+    retrying: Set<string>;
+  }
+) {
+  const idsInGroup = new Set(logs.map((l) => l.id));
+  const childrenByParent = new Map<string | null, ImportLog[]>();
+  for (const log of logs) {
+    const key =
+      log.parent_id && idsInGroup.has(log.parent_id) ? log.parent_id : null;
+    const arr = childrenByParent.get(key) ?? [];
+    arr.push(log);
+    childrenByParent.set(key, arr);
+  }
+  for (const arr of childrenByParent.values()) {
+    arr.sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
+  }
+  const rows: React.ReactNode[] = [];
+  // Depth 1 because the dag header row sits at depth 0; children indent
+  // from there.
+  function walk(parentKey: string | null, depth: number) {
+    const kids = childrenByParent.get(parentKey) ?? [];
+    for (const log of kids) {
+      rows.push(
+        <JobRow
+          key={log.id}
+          log={log}
+          depth={depth}
+          expandedError={ctx.expandedError}
+          setExpandedError={ctx.setExpandedError}
+          onRetry={ctx.onRetry}
+          isRetrying={ctx.retrying.has(log.id)}
+        />
+      );
+      walk(log.id, depth + 1);
+    }
+  }
+  walk(null, 1);
+  return rows;
 }
 
 export default function AdminJobsPage() {
