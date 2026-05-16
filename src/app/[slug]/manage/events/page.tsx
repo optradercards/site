@@ -6,9 +6,9 @@ import { useAccounts } from "@/contexts/AccountContext";
 import { formatEventDateRange } from "@/app/(public)/events/format";
 
 // ---------------------------------------------------------------------------
-// Trader self-service: which upcoming events am I attending?
-// RLS: trader can read all published events; insert/update/delete only their
-// own row in event_traders.
+// Trader self-service: my event schedule + add-an-event picker.
+// RLS: trader can read any published event and manage their own
+// event_traders row.
 // ---------------------------------------------------------------------------
 
 type AttendanceStatus = "confirmed" | "tentative" | "declined";
@@ -52,6 +52,7 @@ export default function ManageEventsPage() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceRow>>({});
   const [loading, setLoading] = useState(true);
   const [savingFor, setSavingFor] = useState<string | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -95,6 +96,15 @@ export default function ManageEventsPage() {
     load();
   }, [load]);
 
+  const attendingEvents = useMemo(
+    () => events.filter((e) => attendance[e.id]),
+    [events, attendance]
+  );
+  const availableEvents = useMemo(
+    () => events.filter((e) => !attendance[e.id]),
+    [events, attendance]
+  );
+
   const upsertAttendance = useCallback(
     async (
       eventId: string,
@@ -137,6 +147,14 @@ export default function ManageEventsPage() {
     [supabase, activeAccountId, attendance]
   );
 
+  const addEvent = useCallback(
+    async (eventId: string) => {
+      await upsertAttendance(eventId, { status: "confirmed" });
+      setShowPicker(false);
+    },
+    [upsertAttendance]
+  );
+
   const removeAttendance = useCallback(
     async (eventId: string) => {
       if (!activeAccountId) return;
@@ -162,18 +180,26 @@ export default function ManageEventsPage() {
     [supabase, activeAccountId]
   );
 
-  const sorted = useMemo(() => events, [events]);
-
   return (
     <div className="container mx-auto px-4 py-6 max-w-4xl">
-      <header className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100">
-          Events
-        </h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-          RSVP for upcoming events. Set your table number once you have it from
-          the organiser — buyers will see it on the public event page.
-        </p>
+      <header className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100">
+            Events
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+            Your upcoming event schedule. Buyers see your table number on the
+            public event page.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPicker((s) => !s)}
+          disabled={availableEvents.length === 0}
+          className="px-4 py-2 text-sm font-medium rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {showPicker ? "Cancel" : "+ Add event"}
+        </button>
       </header>
 
       {error && (
@@ -182,18 +208,63 @@ export default function ManageEventsPage() {
         </div>
       )}
 
+      {/* Add-event picker */}
+      {showPicker && (
+        <section className="mb-6 bg-gray-50 dark:bg-gray-800/50 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-200 mb-3">
+            Pick an event to add
+          </h2>
+          {availableEvents.length === 0 ? (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              You&apos;re already on every upcoming event.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {availableEvents.map((e) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    onClick={() => addEvent(e.id)}
+                    disabled={savingFor === e.id}
+                    className="w-full text-left p-3 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-red-400 hover:shadow transition-all disabled:opacity-50"
+                  >
+                    <p className="font-medium text-gray-800 dark:text-gray-200">
+                      {e.name}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {formatEventDateRange(e.starts_at, e.ends_at)}
+                      {e.venue ? ` · ${e.venue}` : ""}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {/* Attending list */}
       {loading ? (
         <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
-      ) : sorted.length === 0 ? (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+      ) : attendingEvents.length === 0 ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center space-y-3">
           <p className="text-gray-500 dark:text-gray-400">
-            No upcoming events right now.
+            You&apos;re not attending any events yet.
           </p>
+          {availableEvents.length > 0 && !showPicker && (
+            <button
+              type="button"
+              onClick={() => setShowPicker(true)}
+              className="text-sm font-medium text-red-500 hover:text-red-600"
+            >
+              Browse upcoming events →
+            </button>
+          )}
         </div>
       ) : (
         <ul className="space-y-3">
-          {sorted.map((e) => {
-            const att = attendance[e.id];
+          {attendingEvents.map((e) => {
+            const att = attendance[e.id]!;
             const saving = savingFor === e.id;
             return (
               <li
@@ -214,16 +285,11 @@ export default function ManageEventsPage() {
                       </p>
                     )}
                   </div>
-                  {att && (
-                    <span
-                      className={`text-xs font-medium px-2.5 py-1 rounded ${STATUS_BADGE[att.status]}`}
-                    >
-                      {
-                        STATUS_OPTIONS.find((s) => s.value === att.status)
-                          ?.label
-                      }
-                    </span>
-                  )}
+                  <span
+                    className={`text-xs font-medium px-2.5 py-1 rounded ${STATUS_BADGE[att.status]}`}
+                  >
+                    {STATUS_OPTIONS.find((s) => s.value === att.status)?.label}
+                  </span>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 flex flex-wrap items-end gap-3">
@@ -232,7 +298,7 @@ export default function ManageEventsPage() {
                       Status
                     </label>
                     <select
-                      value={att?.status ?? ""}
+                      value={att.status}
                       onChange={(e2) =>
                         upsertAttendance(e.id, {
                           status: e2.target.value as AttendanceStatus,
@@ -241,7 +307,6 @@ export default function ManageEventsPage() {
                       disabled={saving}
                       className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                     >
-                      {!att && <option value="">Not attending</option>}
                       {STATUS_OPTIONS.map((s) => (
                         <option key={s.value} value={s.value}>
                           {s.label}
@@ -256,12 +321,12 @@ export default function ManageEventsPage() {
                     </label>
                     <input
                       type="text"
-                      defaultValue={att?.table_number ?? ""}
+                      defaultValue={att.table_number ?? ""}
                       placeholder="e.g. B12"
-                      disabled={!att || saving}
+                      disabled={saving}
                       onBlur={(e2) => {
                         const v = e2.target.value;
-                        if ((att?.table_number ?? "") !== v) {
+                        if ((att.table_number ?? "") !== v) {
                           upsertAttendance(e.id, { table_number: v });
                         }
                       }}
@@ -269,16 +334,14 @@ export default function ManageEventsPage() {
                     />
                   </div>
 
-                  {att && (
-                    <button
-                      type="button"
-                      onClick={() => removeAttendance(e.id)}
-                      disabled={saving}
-                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-red-500 transition-colors"
-                    >
-                      Remove
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => removeAttendance(e.id)}
+                    disabled={saving}
+                    className="px-3 py-1.5 text-xs text-gray-500 hover:text-red-500 transition-colors"
+                  >
+                    Remove
+                  </button>
                 </div>
               </li>
             );
