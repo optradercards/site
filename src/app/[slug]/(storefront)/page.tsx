@@ -5,6 +5,7 @@ import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import MarketplaceSearch from "@/components/MarketplaceSearch";
 import ProductBadges from "@/components/ProductBadges";
+import { fetchVendorUpcomingEvents, VendorEventsStrip } from "./vendor-events";
 
 type Listing = {
   id: string;
@@ -70,7 +71,10 @@ export default async function StorefrontPage({
   }
 
   const displayCurrency = "AUD";
-  const rates = await fetchExchangeRates(supabase);
+  const [rates, vendorEvents] = await Promise.all([
+    fetchExchangeRates(supabase),
+    fetchVendorUpcomingEvents(supabase, slug),
+  ]);
   const fmtListing = (cents: number | null, sourceCurrency: string) =>
     formatPrice(cents, displayCurrency, rates, sourceCurrency);
 
@@ -170,7 +174,7 @@ export default async function StorefrontPage({
     return (
       <section className="bg-gray-50 dark:bg-gray-900 py-6 md:py-8 flex-1">
         <div className="container mx-auto px-4">
-          <div className="text-center mb-12">
+          <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">
               {name}
             </h1>
@@ -186,6 +190,7 @@ export default async function StorefrontPage({
               </Link>
             )}
           </div>
+          <VendorEventsStrip events={vendorEvents} sellerName={name} />
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-12 text-center text-gray-500 dark:text-gray-400">
             No listings available right now. Check back soon!
           </div>
@@ -221,6 +226,8 @@ export default async function StorefrontPage({
             </Link>
           )}
         </div>
+
+        <VendorEventsStrip events={vendorEvents} sellerName={sellerName} />
 
         {/* Mobile filter toggle */}
         <div className="lg:hidden">
