@@ -176,7 +176,7 @@ export default function CardImportPage() {
           headers: {
             Authorization: `Bearer ${session?.access_token || ""}`,
             "Content-Type": "application/json",
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+            apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || "",
           },
         },
       );
