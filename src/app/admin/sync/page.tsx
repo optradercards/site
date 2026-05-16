@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useJob } from '@/hooks/useJob';
+import { usePipeline, type PipelineStep } from '@/hooks/usePipeline';
 
 interface SyncStats {
   brands?: number;
@@ -14,17 +15,32 @@ interface SyncStats {
   errors?: string[];
 }
 
+interface CatalogProgress {
+  phase: 'brands' | 'pages' | 'queueing' | 'done';
+  brand_index: number;
+  brand_total: number;
+  brand_name: string | null;
+  page: number;
+  products_found: number;
+  batches_queued: number;
+}
+
+const CATALOG_BATCH_SIZE = 50;
+const CATALOG_MAX_PAGES_PER_BRAND = 200; // safety cap; bump if any brand exceeds this
+
 export default function CatalogSyncPage() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [priceLoading, setPriceLoading] = useState(false);
   const [catalogStats, setCatalogStats] = useState<SyncStats | null>(null);
+  const [catalogProgress, setCatalogProgress] = useState<CatalogProgress | null>(null);
   const [historyStats, setHistoryStats] = useState<SyncStats | null>(null);
   const [priceResult, setPriceResult] = useState<{ count: number; ratesUpdated?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const supabase = createClient();
   const imageJob = useJob();
+  const { createPipeline } = usePipeline();
 
   async function runImageResync() {
     try {
@@ -101,14 +117,131 @@ export default function CatalogSyncPage() {
     setCatalogLoading(true);
     setError(null);
     setCatalogStats(null);
+    setCatalogProgress({
+      phase: 'brands',
+      brand_index: 0,
+      brand_total: 0,
+      brand_name: null,
+      page: 0,
+      products_found: 0,
+      batches_queued: 0,
+    });
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke('shiny-sync-catalog', {
-        body: {},
-      });
+      // 1. Enumerate available brands from shiny.
+      const { data: brandsResp, error: brandsErr } = await supabase.functions.invoke(
+        'shiny-fetch-brands'
+      );
+      if (brandsErr) throw new Error(brandsErr.message);
+      const brands: Array<{ id: string; na?: string; name?: string }> = Array.isArray(brandsResp)
+        ? brandsResp
+        : (brandsResp?.data ?? brandsResp?.brands ?? []);
+      if (brands.length === 0) throw new Error('No brands returned from Shiny');
 
-      if (fnError) throw new Error(fnError.message);
-      setCatalogStats(data.stats);
+      // 2. Paginate /product-search per brand, collecting product IDs.
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const headers = {
+        Authorization: `Bearer ${session?.access_token ?? ''}`,
+        'Content-Type': 'application/json',
+        apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '',
+      };
+
+      const allProductIds = new Set<string>();
+
+      for (let bi = 0; bi < brands.length; bi++) {
+        const brand = brands[bi];
+        const brandName = brand.name ?? brand.na ?? brand.id;
+        setCatalogProgress((p) => ({
+          ...(p as CatalogProgress),
+          phase: 'pages',
+          brand_index: bi + 1,
+          brand_total: brands.length,
+          brand_name: brandName,
+          page: 0,
+        }));
+
+        for (let page = 1; page <= CATALOG_MAX_PAGES_PER_BRAND; page++) {
+          const params = new URLSearchParams({
+            filteredBrands: brand.id,
+            page: String(page),
+            sortBy: 'relevance',
+          });
+          const res = await fetch(
+            `${supabaseUrl}/functions/v1/shiny-fetch-cards?${params.toString()}`,
+            { method: 'GET', headers }
+          );
+          if (!res.ok) {
+            throw new Error(
+              `shiny-fetch-cards failed (${res.status}) for brand ${brandName} page ${page}`
+            );
+          }
+          const body = await res.json();
+          const items: Array<{ id?: string }> =
+            body?.items ?? body?.data?.items ?? body?.products ?? [];
+
+          if (items.length === 0) break;
+
+          for (const it of items) {
+            if (it?.id) allProductIds.add(it.id);
+          }
+
+          setCatalogProgress((p) => ({
+            ...(p as CatalogProgress),
+            page,
+            products_found: allProductIds.size,
+          }));
+        }
+      }
+
+      if (allProductIds.size === 0) {
+        throw new Error('No products discovered across brands');
+      }
+
+      // 3. Build the pipeline: chained shiny-cards → shiny-history per batch.
+      setCatalogProgress((p) => ({ ...(p as CatalogProgress), phase: 'queueing' }));
+
+      const productIds = Array.from(allProductIds);
+      const batches: string[][] = [];
+      for (let i = 0; i < productIds.length; i += CATALOG_BATCH_SIZE) {
+        batches.push(productIds.slice(i, i + CATALOG_BATCH_SIZE));
+      }
+
+      const steps: PipelineStep[] = [];
+      let prevCardIdx = -1;
+      for (const batch of batches) {
+        const cardIdx = steps.length;
+        steps.push({
+          platform: 'shiny-cards',
+          handle: `${batch.length} cards`,
+          payload: { productIds: batch },
+          ...(prevCardIdx >= 0 ? { dependsOn: [prevCardIdx] } : {}),
+        });
+        const histIdx = steps.length;
+        steps.push({
+          platform: 'shiny-history',
+          handle: `${batch.length} history`,
+          payload: { card_ids: batch },
+          dependsOn: [cardIdx],
+        });
+        prevCardIdx = cardIdx;
+      }
+
+      const { data: acct } = await supabase.rpc('get_personal_account');
+      if (!acct?.account_id) throw new Error('No account found');
+      await createPipeline(acct.account_id, steps);
+
+      setCatalogProgress((p) => ({
+        ...(p as CatalogProgress),
+        phase: 'done',
+        batches_queued: batches.length,
+      }));
+      setCatalogStats({
+        brands: brands.length,
+        products: productIds.length,
+      });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -157,8 +290,9 @@ export default function CatalogSyncPage() {
             Full Catalog Sync
           </h3>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            Fetches all brands, groups, sets, and product items from Shiny API.
-            Triggers auto-sync to cards schema.
+            Walks every brand on Shiny, paginates all products, and queues
+            import jobs for each batch (50 cards per job, chained card →
+            history). Watch progress under Admin → Jobs once queued.
           </p>
 
           <button
@@ -166,28 +300,46 @@ export default function CatalogSyncPage() {
             disabled={catalogLoading}
             className="w-full px-4 py-2 bg-red-500 hover:bg-red-600 disabled:bg-gray-400 text-white rounded-lg transition-colors font-medium"
           >
-            {catalogLoading ? 'Syncing...' : 'Run Catalog Sync'}
+            {catalogLoading ? 'Discovering…' : 'Run Catalog Sync'}
           </button>
 
-          {catalogStats && (
+          {catalogProgress && catalogLoading && (
             <div className="mt-4 space-y-1 text-sm">
-              <p className="text-green-600 dark:text-green-400 font-medium">Sync complete</p>
-              <p>Brands: {catalogStats.brands ?? 0}</p>
-              <p>Groups: {catalogStats.groups ?? 0}</p>
-              <p>Sets: {catalogStats.sets ?? 0}</p>
-              <p>Products: {catalogStats.products ?? 0}</p>
-              {catalogStats.errors && catalogStats.errors.length > 0 && (
-                <div className="mt-2">
-                  <p className="text-amber-600 dark:text-amber-400 font-medium">
-                    {catalogStats.errors.length} error(s)
-                  </p>
-                  <ul className="text-xs text-gray-500 mt-1 max-h-32 overflow-y-auto">
-                    {catalogStats.errors.slice(0, 10).map((e, i) => (
-                      <li key={i}>{e}</li>
-                    ))}
-                  </ul>
-                </div>
+              {catalogProgress.phase === 'brands' && (
+                <p className="text-gray-700 dark:text-gray-300">Loading brands…</p>
               )}
+              {catalogProgress.phase === 'pages' && (
+                <>
+                  <p className="text-gray-700 dark:text-gray-300">
+                    Brand {catalogProgress.brand_index} / {catalogProgress.brand_total}
+                    {catalogProgress.brand_name ? ` — ${catalogProgress.brand_name}` : ''}
+                  </p>
+                  <p className="text-gray-500 dark:text-gray-400">
+                    Page {catalogProgress.page} · {catalogProgress.products_found} products found
+                  </p>
+                </>
+              )}
+              {catalogProgress.phase === 'queueing' && (
+                <p className="text-gray-700 dark:text-gray-300">
+                  Queueing jobs for {catalogProgress.products_found} products…
+                </p>
+              )}
+            </div>
+          )}
+
+          {catalogStats && !catalogLoading && (
+            <div className="mt-4 space-y-1 text-sm">
+              <p className="text-green-600 dark:text-green-400 font-medium">
+                Queued
+              </p>
+              <p>Brands walked: {catalogStats.brands ?? 0}</p>
+              <p>Products discovered: {catalogStats.products ?? 0}</p>
+              {catalogProgress?.batches_queued ? (
+                <p>Batches queued: {catalogProgress.batches_queued}</p>
+              ) : null}
+              <p className="text-xs text-gray-500 mt-2">
+                Watch them run under Admin → Jobs.
+              </p>
             </div>
           )}
         </div>
