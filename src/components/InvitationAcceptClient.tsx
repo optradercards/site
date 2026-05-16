@@ -87,8 +87,8 @@ export default function InvitationAcceptClient({ token }: Props) {
         {lookup.data && !lookup.data.active && (
           <div className="space-y-3">
             <p className="text-sm text-gray-700 dark:text-gray-300">
-              This invitation is no longer valid. Invitations expire after 24
-              hours, and one-time links can only be used once.
+              This invitation is no longer valid. Invitations expire after 7
+              days, and one-time links can only be used once.
             </p>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Ask the team owner to send you a new invite link.

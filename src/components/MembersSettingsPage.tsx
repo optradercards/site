@@ -253,7 +253,7 @@ export default function MembersSettingsPage() {
           <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
             <p className="text-sm text-green-800 dark:text-green-300 mb-2">
               Invite link generated. Share this with your team member (expires
-              in 24 hours):
+              in 7 days):
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-xs bg-white dark:bg-gray-800 p-2 rounded border border-green-300 dark:border-green-700 truncate">
@@ -300,7 +300,7 @@ export default function MembersSettingsPage() {
                     {new Date(invitation.created_at).toLocaleDateString()} ·{" "}
                     {invitation.invitation_type === "one_time"
                       ? "one-time use"
-                      : "24-hour link"}
+                      : "7-day link"}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
