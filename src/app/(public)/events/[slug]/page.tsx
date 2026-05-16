@@ -70,13 +70,37 @@ export default async function EventDetailPage({
 
   return (
     <div className="container mx-auto px-4 py-8 md:py-12">
-      <nav className="mb-6 text-sm">
-        <Link
-          href="/events"
-          className="text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors"
-        >
-          ← Back to events
-        </Link>
+      <nav aria-label="Breadcrumb" className="mb-6 text-sm">
+        <ol className="flex items-center gap-1.5 flex-wrap text-gray-500 dark:text-gray-400">
+          <li>
+            <Link
+              href="/"
+              className="hover:text-red-500 transition-colors"
+            >
+              Home
+            </Link>
+          </li>
+          <li aria-hidden="true" className="text-gray-300 dark:text-gray-600">
+            /
+          </li>
+          <li>
+            <Link
+              href="/events"
+              className="hover:text-red-500 transition-colors"
+            >
+              Events
+            </Link>
+          </li>
+          <li aria-hidden="true" className="text-gray-300 dark:text-gray-600">
+            /
+          </li>
+          <li
+            aria-current="page"
+            className="text-gray-800 dark:text-gray-200 font-medium line-clamp-1"
+          >
+            {event.name}
+          </li>
+        </ol>
       </nav>
 
       <article className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
