@@ -8,18 +8,18 @@ import { gradeLabel, type EcomListing } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
-// In-person Point of Sale for the Trading Card Summit (and future events).
-// Modes: Order (sell to walk-up) | Trade (give/get cards).
-// Persists drafts on complete; survives reload via reload-existing-draft on mount.
+// In-person Point of Sale. Every transaction can mix sales and trade-ins:
+// inventory search adds Sold lines from the trader's stock; the trade-in
+// adder searches the global card catalog and adds Trade-in lines. Each
+// line has a side selector so it can be retagged at any time.
 // ---------------------------------------------------------------------------
 
-type Mode = "order" | "trade";
 type ItemSide = "sold" | "bought" | "traded_in" | "traded_out";
 type PaymentMethod = "cash" | "payid_manual" | "bank_transfer";
 
 type DraftItem = {
-  key: string; // local key, distinct from DB id
-  listing_id: string;
+  key: string; // local key, distinct from any DB id
+  listing_id: string | null; // null for trade-ins (not from inventory)
   card_product_id: string;
   card_name: string;
   image_url: string | null;
@@ -28,18 +28,30 @@ type DraftItem = {
   side: ItemSide;
   quantity: number;
   unit_price_cents: number;
-  max_available: number;
+  max_available: number; // Infinity for trade-ins
 };
 
-const ORDER_SIDES: ItemSide[] = ["sold"];
-const TRADE_SIDES: ItemSide[] = ["traded_out", "traded_in"];
+type CatalogProduct = {
+  id: string;
+  name: string;
+  image_url: string | null;
+  set_name: string | null;
+  brand_name: string | null;
+  card_number: string | null;
+  rarity: string | null;
+};
+
+const SIDE_LABEL: Record<ItemSide, string> = {
+  sold: "Sold",
+  bought: "Bought",
+  traded_in: "Trade-in",
+  traded_out: "Trade-out",
+};
+
+const SIDES: ItemSide[] = ["sold", "bought", "traded_in", "traded_out"];
 
 function uniqueKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-function defaultSide(mode: Mode): ItemSide {
-  return mode === "order" ? "sold" : "traded_out";
 }
 
 function useDebounced<T>(value: T, ms = 250): T {
@@ -57,31 +69,17 @@ export default function SellPage() {
   const params = useParams();
   const slug = params?.slug as string;
 
-  // -- State ----------------------------------------------------------------
-  const [mode, setMode] = useState<Mode>("order");
-  const [searchInput, setSearchInput] = useState("");
-  const search = useDebounced(searchInput, 250);
+  // --- Inventory search (Sold items) -------------------------------------
+  const [invSearchInput, setInvSearchInput] = useState("");
+  const invSearch = useDebounced(invSearchInput, 250);
+  const [invResults, setInvResults] = useState<EcomListing[]>([]);
+  const [invSearching, setInvSearching] = useState(false);
 
-  const [results, setResults] = useState<EcomListing[]>([]);
-  const [searching, setSearching] = useState(false);
-
-  const [items, setItems] = useState<DraftItem[]>([]);
-
-  const [buyerName, setBuyerName] = useState("");
-  const [buyerEmail, setBuyerEmail] = useState("");
-  const [buyerPhone, setBuyerPhone] = useState("");
-
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-  const [payidRef, setPayidRef] = useState("");
-  const [completing, setCompleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // -- Search ---------------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!activeAccountId) return;
-      setSearching(true);
+      setInvSearching(true);
       let q = supabase
         .schema("ecom")
         .from("listing_details")
@@ -90,56 +88,108 @@ export default function SellPage() {
         .eq("status", "active")
         .gt("quantity", 0)
         .limit(30);
-      if (search.trim()) {
-        q = q.ilike("card_name", `%${search.trim()}%`);
+      if (invSearch.trim()) {
+        q = q.ilike("card_name", `%${invSearch.trim()}%`);
       }
       const { data } = await q;
       if (!cancelled) {
-        setResults((data ?? []) as EcomListing[]);
-        setSearching(false);
+        setInvResults((data ?? []) as EcomListing[]);
+        setInvSearching(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [supabase, activeAccountId, search]);
+  }, [supabase, activeAccountId, invSearch]);
 
-  // -- Cart ops -------------------------------------------------------------
-  const currency = items[0]?.["unit_price_cents"] != null && results[0]?.currency
-    ? results[0].currency
-    : "AUD";
+  // --- Trade-in search (global catalog) ----------------------------------
+  const [showTradeAdder, setShowTradeAdder] = useState(false);
+  const [tradeSearchInput, setTradeSearchInput] = useState("");
+  const tradeSearch = useDebounced(tradeSearchInput, 250);
+  const [tradeResults, setTradeResults] = useState<CatalogProduct[]>([]);
+  const [tradeSearching, setTradeSearching] = useState(false);
 
-  const addListing = useCallback(
-    (listing: EcomListing) => {
-      setItems((prev) => {
-        const existing = prev.find((i) => i.listing_id === listing.id);
-        const price = listing.price_cents ?? listing.calculated_price_cents ?? 0;
-        if (existing) {
-          if (existing.quantity >= existing.max_available) return prev;
-          return prev.map((i) =>
-            i.key === existing.key ? { ...i, quantity: i.quantity + 1 } : i
-          );
-        }
-        return [
-          ...prev,
-          {
-            key: uniqueKey(),
-            listing_id: listing.id,
-            card_product_id: listing.card_product_id,
-            card_name: listing.card_name,
-            image_url: listing.image_url,
-            grading_service: listing.grading_service,
-            grade: listing.grade,
-            side: defaultSide(mode),
-            quantity: 1,
-            unit_price_cents: price,
-            max_available: listing.quantity,
-          },
-        ];
-      });
-    },
-    [mode]
-  );
+  useEffect(() => {
+    if (!showTradeAdder) return;
+    let cancelled = false;
+    (async () => {
+      if (!tradeSearch.trim()) {
+        setTradeResults([]);
+        return;
+      }
+      setTradeSearching(true);
+      const { data } = await supabase
+        .schema("cards")
+        .from("products_with_details")
+        .select(
+          "id, name, image_url, set_name, brand_name, card_number, rarity"
+        )
+        .ilike("name", `%${tradeSearch.trim()}%`)
+        .limit(30);
+      if (!cancelled) {
+        setTradeResults((data ?? []) as CatalogProduct[]);
+        setTradeSearching(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, tradeSearch, showTradeAdder]);
+
+  // --- Cart --------------------------------------------------------------
+  const [items, setItems] = useState<DraftItem[]>([]);
+  const currency = invResults[0]?.currency ?? "AUD";
+
+  const addSold = useCallback((listing: EcomListing) => {
+    setItems((prev) => {
+      const existing = prev.find(
+        (i) => i.listing_id === listing.id && i.side === "sold"
+      );
+      const price = listing.price_cents ?? listing.calculated_price_cents ?? 0;
+      if (existing) {
+        if (existing.quantity >= existing.max_available) return prev;
+        return prev.map((i) =>
+          i.key === existing.key ? { ...i, quantity: i.quantity + 1 } : i
+        );
+      }
+      return [
+        ...prev,
+        {
+          key: uniqueKey(),
+          listing_id: listing.id,
+          card_product_id: listing.card_product_id,
+          card_name: listing.card_name,
+          image_url: listing.image_url,
+          grading_service: listing.grading_service,
+          grade: listing.grade,
+          side: "sold",
+          quantity: 1,
+          unit_price_cents: price,
+          max_available: listing.quantity,
+        },
+      ];
+    });
+  }, []);
+
+  const addTradeIn = useCallback((product: CatalogProduct) => {
+    setItems((prev) => [
+      ...prev,
+      {
+        key: uniqueKey(),
+        listing_id: null,
+        card_product_id: product.id,
+        card_name: product.name,
+        image_url: product.image_url,
+        grading_service: null,
+        grade: null,
+        side: "traded_in",
+        quantity: 1,
+        unit_price_cents: 0,
+        max_available: Number.POSITIVE_INFINITY,
+      },
+    ]);
+    setTradeSearchInput("");
+  }, []);
 
   const updateItem = useCallback((key: string, patch: Partial<DraftItem>) => {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -150,21 +200,25 @@ export default function SellPage() {
   }, []);
 
   const totals = useMemo(() => {
-    const cashIn = items.reduce((sum, it) => {
+    const net = items.reduce((sum, it) => {
       if (it.side === "sold" || it.side === "traded_out") {
         return sum + it.unit_price_cents * it.quantity;
       }
-      if (it.side === "bought" || it.side === "traded_in") {
-        return sum - it.unit_price_cents * it.quantity;
-      }
-      return sum;
+      return sum - it.unit_price_cents * it.quantity;
     }, 0);
-    return { net_cents: cashIn };
+    return { net_cents: net };
   }, [items]);
 
-  // -- Complete -------------------------------------------------------------
-  const canComplete =
-    items.length > 0 && !completing && activeAccountId !== null;
+  // --- Buyer + payment ---------------------------------------------------
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [payidRef, setPayidRef] = useState("");
+  const [completing, setCompleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const canComplete = items.length > 0 && !completing && activeAccountId !== null;
 
   const complete = useCallback(async () => {
     if (!canComplete || !activeAccountId) return;
@@ -177,13 +231,22 @@ export default function SellPage() {
           ? { name: buyerName || null, email: buyerEmail || null, phone: buyerPhone || null }
           : null;
 
-      // 1. Insert transaction
+      // Type discriminator: pure trade only if no cash changes hands and
+      // every item is a trade-direction. Mixed orders (sale + trade-in)
+      // still classify as 'order'.
+      const hasSaleSide = items.some(
+        (it) => it.side === "sold" || it.side === "bought"
+      );
+      const type =
+        !hasSaleSide && totals.net_cents === 0 ? "trade" : "order";
+
+      // 1. Insert transaction (draft)
       const { data: tx, error: txErr } = await supabase
         .schema("ecom")
         .from("transactions")
         .insert({
           account_id: activeAccountId,
-          type: mode,
+          type,
           status: "draft",
           buyer_contact,
           currency,
@@ -209,7 +272,7 @@ export default function SellPage() {
         .insert(rows);
       if (itErr) throw itErr;
 
-      // 3. Payment (if any cash in)
+      // 3. Payment (when cash is owed to us)
       if (totals.net_cents > 0) {
         const { error: payErr } = await supabase
           .schema("ecom")
@@ -226,9 +289,10 @@ export default function SellPage() {
         if (payErr) throw payErr;
       }
 
-      // 4. Decrement listing quantities (app-side; consider DB trigger later)
+      // 4. Decrement listing quantities for items leaving stock
       for (const it of items) {
         if (it.side !== "sold" && it.side !== "traded_out") continue;
+        if (!it.listing_id) continue;
         const newQty = Math.max(0, it.max_available - it.quantity);
         await supabase
           .schema("ecom")
@@ -246,14 +310,16 @@ export default function SellPage() {
         .eq("id", tx.id);
       if (doneErr) throw doneErr;
 
-      // Reset form for next sale
+      // Reset for next transaction
       setItems([]);
       setBuyerName("");
       setBuyerEmail("");
       setBuyerPhone("");
       setPayidRef("");
       setPaymentMethod("cash");
-      setSearchInput("");
+      setInvSearchInput("");
+      setTradeSearchInput("");
+      setShowTradeAdder(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not complete sale");
     } finally {
@@ -267,74 +333,65 @@ export default function SellPage() {
     canComplete,
     currency,
     items,
-    mode,
     payidRef,
     paymentMethod,
     supabase,
     totals.net_cents,
   ]);
 
-  // -- Render ---------------------------------------------------------------
+  // --- Render ------------------------------------------------------------
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
-      <header className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100">
-            Sell
-          </h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            In-person point of sale — for events and walk-up buyers.
-          </p>
-        </div>
-        <div className="inline-flex rounded-lg border border-gray-200 dark:border-gray-700 p-0.5 bg-white dark:bg-gray-800">
-          {(["order", "trade"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => {
-                setMode(m);
-                setItems((prev) =>
-                  prev.map((it) => ({ ...it, side: defaultSide(m) }))
-                );
-              }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                mode === m
-                  ? "bg-red-500 text-white"
-                  : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-              }`}
-            >
-              {m === "order" ? "Sale" : "Trade"}
-            </button>
-          ))}
-        </div>
+      <header className="mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100">
+          Sell
+        </h1>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          In-person point of sale. Mix sales and trade-ins on the same ticket.
+        </p>
       </header>
 
       <div className="grid lg:grid-cols-[1fr_360px] gap-6">
-        {/* LEFT: Search + results */}
+        {/* LEFT: Inventory + trade-in adders */}
         <section className="space-y-4">
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search your inventory by card name…"
-            autoFocus
-            className="w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
-          />
+          {/* Inventory search */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                Your inventory
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowTradeAdder((s) => !s)}
+                className="text-xs font-medium text-red-500 hover:text-red-600"
+              >
+                {showTradeAdder ? "Hide trade-in" : "+ Add trade-in"}
+              </button>
+            </div>
+            <input
+              value={invSearchInput}
+              onChange={(e) => setInvSearchInput(e.target.value)}
+              placeholder="Search your inventory by card name…"
+              autoFocus
+              className="w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {searching && results.length === 0 ? (
+            {invSearching && invResults.length === 0 ? (
               <p className="col-span-full text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
                 Searching…
               </p>
-            ) : results.length === 0 ? (
+            ) : invResults.length === 0 ? (
               <p className="col-span-full text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
                 No active listings match.
               </p>
             ) : (
-              results.map((r) => (
+              invResults.map((r) => (
                 <button
                   key={r.id}
                   type="button"
-                  onClick={() => addListing(r)}
+                  onClick={() => addSold(r)}
                   className="text-left bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-red-400 hover:shadow-md transition-all"
                 >
                   <div className="aspect-[5/7] bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
@@ -376,12 +433,74 @@ export default function SellPage() {
               ))
             )}
           </div>
+
+          {/* Trade-in adder */}
+          {showTradeAdder && (
+            <div className="bg-gray-50 dark:bg-gray-800/60 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                  Trade-in (from buyer)
+                </h2>
+                <p className="text-[10px] text-gray-400">
+                  Search the global catalog
+                </p>
+              </div>
+              <input
+                value={tradeSearchInput}
+                onChange={(e) => setTradeSearchInput(e.target.value)}
+                placeholder="Search any card by name…"
+                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+              {tradeSearchInput.trim() && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-72 overflow-y-auto">
+                  {tradeSearching && tradeResults.length === 0 ? (
+                    <p className="col-span-full text-xs text-gray-500 py-4 text-center">
+                      Searching…
+                    </p>
+                  ) : tradeResults.length === 0 ? (
+                    <p className="col-span-full text-xs text-gray-500 py-4 text-center">
+                      No cards match.
+                    </p>
+                  ) : (
+                    tradeResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addTradeIn(p)}
+                        className="text-left bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-red-400 transition-colors"
+                      >
+                        <div className="aspect-[5/7] bg-gray-100 dark:bg-gray-800 relative">
+                          {p.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={p.image_url}
+                              alt={p.name}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                            />
+                          ) : null}
+                        </div>
+                        <div className="p-1.5">
+                          <p className="text-[11px] font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
+                            {p.name}
+                          </p>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
+                            {p.set_name ?? ""}
+                          </p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* RIGHT: Current transaction */}
         <aside className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Current {mode === "order" ? "sale" : "trade"}
+            Current transaction
           </h2>
 
           {items.length === 0 ? (
@@ -391,7 +510,7 @@ export default function SellPage() {
           ) : (
             <ul className="space-y-2 divide-y divide-gray-100 dark:divide-gray-700">
               {items.map((it) => {
-                const allowedSides = mode === "order" ? ORDER_SIDES : TRADE_SIDES;
+                const isOutbound = it.side === "sold" || it.side === "traded_out";
                 return (
                   <li key={it.key} className="pt-2 first:pt-0 space-y-1.5">
                     <div className="flex items-start gap-2">
@@ -400,7 +519,9 @@ export default function SellPage() {
                           {it.card_name}
                         </p>
                         <p className="text-[10px] text-gray-500 dark:text-gray-400">
-                          {gradeLabel(it.grading_service, it.grade)}
+                          {it.listing_id
+                            ? gradeLabel(it.grading_service, it.grade)
+                            : "Trade-in (from buyer)"}
                         </p>
                       </div>
                       <button
@@ -458,23 +579,25 @@ export default function SellPage() {
                         min="0"
                         className="w-24 px-2 py-1 text-right rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                       />
-                      {mode === "trade" && (
-                        <select
-                          value={it.side}
-                          onChange={(e) =>
-                            updateItem(it.key, {
-                              side: e.target.value as ItemSide,
-                            })
-                          }
-                          className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-                        >
-                          {allowedSides.map((s) => (
-                            <option key={s} value={s}>
-                              {s === "traded_out" ? "We give" : "We get"}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                      <select
+                        value={it.side}
+                        onChange={(e) =>
+                          updateItem(it.key, {
+                            side: e.target.value as ItemSide,
+                          })
+                        }
+                        className={`px-2 py-1 rounded border text-[11px] font-medium ${
+                          isOutbound
+                            ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+                            : "border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300"
+                        }`}
+                      >
+                        {SIDES.map((s) => (
+                          <option key={s} value={s}>
+                            {SIDE_LABEL[s]}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </li>
                 );
@@ -485,7 +608,11 @@ export default function SellPage() {
           <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between text-base font-bold">
               <span className="text-gray-600 dark:text-gray-300">
-                {totals.net_cents >= 0 ? "Buyer pays" : "We pay"}
+                {totals.net_cents > 0
+                  ? "Buyer pays"
+                  : totals.net_cents < 0
+                    ? "We pay buyer"
+                    : "Even trade"}
               </span>
               <span className="text-gray-900 dark:text-gray-100">
                 {formatPrice(Math.abs(totals.net_cents), currency, {}, currency)}
@@ -572,11 +699,7 @@ export default function SellPage() {
             onClick={complete}
             className="w-full py-3 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {completing
-              ? "Saving…"
-              : mode === "order"
-                ? "Complete sale"
-                : "Record trade"}
+            {completing ? "Saving…" : "Complete"}
           </button>
           <p className="text-[10px] text-gray-400 text-center -mt-2">
             Slug: {slug}
