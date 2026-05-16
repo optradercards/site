@@ -233,6 +233,13 @@ export default function SiteHeader() {
               Watchlist
             </Link>
             <span className="text-gray-600">|</span>
+            <Link
+              href="/events"
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              Events
+            </Link>
+            <span className="text-gray-600">|</span>
             {user ? (
               <Link
                 href={dashboardHref}
@@ -568,6 +575,15 @@ export default function SiteHeader() {
                   className="block px-3 py-2.5 rounded-lg text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
                 >
                   Watchlist
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/events"
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="block px-3 py-2.5 rounded-lg text-gray-200 hover:bg-gray-700 hover:text-white transition-colors"
+                >
+                  Events
                 </Link>
               </li>
 
