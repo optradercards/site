@@ -18,6 +18,18 @@ interface ImportLog {
   depends_on: string[] | null;
   dag_id: string | null;
   parent_id: string | null;
+  attempts: number | null;
+  scheduled_at: string | null;
+}
+
+function formatScheduledIn(iso: string | null): string | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "due";
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) return `retry in ${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  return `retry in ${minutes}m`;
 }
 
 const PLATFORM_LABELS: Record<string, string> = {
@@ -148,6 +160,14 @@ function JobRow({
         <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
           {PLATFORM_LABELS[log.platform] ?? log.platform}
         </span>
+        {log.attempts != null && log.attempts > 0 && (
+          <span
+            className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+            title={`Attempts: ${log.attempts}`}
+          >
+            ×{log.attempts + 1}
+          </span>
+        )}
       </td>
       <td className="px-4 py-3 font-mono text-xs max-w-[200px] truncate">
         {log.handle || "—"}
@@ -161,6 +181,11 @@ function JobRow({
           )}
           {log.status}
         </span>
+        {log.status === "pending" && log.scheduled_at && (
+          <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+            {formatScheduledIn(log.scheduled_at)}
+          </span>
+        )}
       </td>
       <td className="px-4 py-3 text-xs">{formatStats(log)}</td>
       <td className="px-4 py-3 whitespace-nowrap">{formatDuration(log)}</td>
