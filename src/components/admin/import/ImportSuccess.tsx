@@ -1,8 +1,11 @@
+import Link from "next/link";
+
 interface ImportStats {
   brands_imported: number;
   set_lists_imported?: number;
   sets_imported: number;
   groups_imported?: number;
+  brands_queued?: number;
   errors: string[];
 }
 
@@ -17,13 +20,26 @@ export function ImportSuccess({ stats }: ImportSuccessProps) {
         <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
           <span className="text-green-400 text-2xl">✓</span>
         </div>
-        <p className="text-green-100 font-bold text-xl">Import Successful!</p>
+        <p className="text-green-100 font-bold text-xl">Metadata imported — product discovery queued</p>
       </div>
       <div className="grid grid-cols-4 gap-6 ml-15">
         <StatCard label="Brands" value={stats.brands_imported} />
         <StatCard label="Set Lists" value={stats.set_lists_imported || 0} />
         <StatCard label="Groups" value={stats.groups_imported || 0} />
         <StatCard label="Sets" value={stats.sets_imported} />
+      </div>
+      <div className="mt-4 ml-15 flex items-center gap-4 text-sm text-green-200">
+        {stats.brands_queued != null && (
+          <span>
+            {stats.brands_queued} brand discovery job{stats.brands_queued === 1 ? "" : "s"} queued
+          </span>
+        )}
+        <Link
+          href="/admin/jobs"
+          className="text-green-300 hover:text-green-100 font-medium underline"
+        >
+          Watch jobs →
+        </Link>
       </div>
       {stats.errors.length > 0 && (
         <div className="mt-4 ml-15 p-4 bg-red-950/50 rounded-xl border border-red-800/50">

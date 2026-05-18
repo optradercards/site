@@ -5,7 +5,9 @@ export function PageHeader() {
         Import Brands & Collections
       </h1>
       <p className="text-slate-400 text-lg">
-        Select brands to import their complete catalog of sets and groups
+        Imports brand metadata, sets, and every product (with price history)
+        in the selected brands. Pagination and product imports run as chained
+        background jobs — watch under Admin → Jobs.
       </p>
     </div>
   );

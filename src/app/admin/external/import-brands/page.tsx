@@ -141,9 +141,18 @@ export default function BrandSetImportPage() {
         .filter(Boolean)
         .join(', ');
 
-      await createJob(acct.account_id, 'shiny-brands', brandNames || `${selectedBrands.size} brands`, {
-        brandIds: Array.from(selectedBrands),
-      });
+      const dagId =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : undefined;
+
+      await createJob(
+        acct.account_id,
+        'shiny-brands',
+        brandNames || `${selectedBrands.size} brands`,
+        { brandIds: Array.from(selectedBrands) },
+        { dag_id: dagId },
+      );
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Failed to start import');
     }
@@ -165,6 +174,7 @@ export default function BrandSetImportPage() {
               set_lists_imported: stats.set_lists_imported ?? 0,
               groups_imported: stats.groups_imported ?? 0,
               sets_imported: stats.sets_imported ?? 0,
+              brands_queued: stats.brands_queued ?? 0,
               errors: [],
             }} />}
             {displayError && <ImportError message={displayError} />}
