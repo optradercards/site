@@ -83,10 +83,15 @@ export default function CardImportPage() {
     new Set<string>(),
   );
 
-  // Import state
-  const BATCH_SIZE = 50;
+  // Import state.
+  // 25 keeps each shiny-cards + shiny-history job well under the 150s
+  // Supabase Edge function wall-clock. 50 was averaging 84-102s and
+  // brushing the limit (occasional 504s); 25-card tests run in ~10s.
+  const BATCH_SIZE = 25;
   const { jobs, status: pipelineStatus, createPipeline } = usePipeline();
   const [importError, setImportError] = useState<string | null>(null);
+  const [forceReimport, setForceReimport] = useState(false);
+  const [skippedCount, setSkippedCount] = useState(0);
   const importing = pipelineStatus === 'running';
 
   useEffect(() => {
@@ -231,9 +236,43 @@ export default function CardImportPage() {
     }
 
     setImportError(null);
+    setSkippedCount(0);
 
     try {
-      const productIds = Array.from(selectedProducts);
+      let productIds = Array.from(selectedProducts);
+
+      // Filter out cards that already exist in cards.products, unless the
+      // operator has opted into a forced re-import. Existing cards get
+      // their prices/history refreshed by the daily-shiny-history cron;
+      // re-running the full import pipeline for them is wasted work
+      // (image downloads + uploads dominate runtime).
+      if (!forceReimport) {
+        const EXISTS_CHUNK = 200; // keep PostgREST URL under ~8KB
+        const existing = new Set<string>();
+        for (let i = 0; i < productIds.length; i += EXISTS_CHUNK) {
+          const chunk = productIds.slice(i, i + EXISTS_CHUNK);
+          const { data, error } = await supabase
+            .schema("cards")
+            .from("products")
+            .select("source_id")
+            .eq("source_provider", "shiny")
+            .in("source_id", chunk);
+          if (error) throw error;
+          for (const row of data ?? []) {
+            if (row.source_id) existing.add(row.source_id);
+          }
+        }
+        const before = productIds.length;
+        productIds = productIds.filter((id) => !existing.has(id));
+        setSkippedCount(before - productIds.length);
+      }
+
+      if (productIds.length === 0) {
+        setImportError(
+          "All selected products already exist. Tick 'Force re-import' to refresh them.",
+        );
+        return;
+      }
 
       // Split into batches
       const batches: string[][] = [];
@@ -425,15 +464,27 @@ export default function CardImportPage() {
                     Clear
                   </button>
                 </div>
-                <button
-                  onClick={handleImport}
-                  disabled={importing || selectedProducts.size === 0}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-slate-600 text-white font-semibold py-3 px-8 rounded-xl transition-all disabled:cursor-not-allowed"
-                >
-                  {importing
-                    ? "Importing..."
-                    : `Import ${selectedProducts.size} Selected`}
-                </button>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={forceReimport}
+                      onChange={(e) => setForceReimport(e.target.checked)}
+                      disabled={importing}
+                      className="rounded border-gray-300 dark:border-slate-600"
+                    />
+                    Force re-import
+                  </label>
+                  <button
+                    onClick={handleImport}
+                    disabled={importing || selectedProducts.size === 0}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-slate-600 text-white font-semibold py-3 px-8 rounded-xl transition-all disabled:cursor-not-allowed"
+                  >
+                    {importing
+                      ? "Importing..."
+                      : `Import ${selectedProducts.size} Selected`}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -441,6 +492,11 @@ export default function CardImportPage() {
               <div className="bg-green-50 dark:bg-green-900/30 border border-green-300 dark:border-green-700 rounded-xl p-6">
                 <p className="text-green-800 dark:text-green-100 font-semibold mb-3">
                   Import Successful
+                  {skippedCount > 0 && (
+                    <span className="ml-2 text-sm font-normal text-green-700 dark:text-green-200">
+                      ({skippedCount} already imported, skipped — daily cron refreshes their history)
+                    </span>
+                  )}
                 </p>
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   {(() => {
