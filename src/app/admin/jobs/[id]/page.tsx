@@ -11,7 +11,7 @@ interface JobLog {
   account_id: string | null;
   platform: string;
   handle: string | null;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "waiting" | "completed" | "failed";
   payload: Record<string, unknown> | null;
   stats: Record<string, unknown> | null;
   error_message: string | null;

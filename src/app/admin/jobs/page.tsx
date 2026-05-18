@@ -10,7 +10,7 @@ interface ImportLog {
   account_id: string | null;
   platform: string;
   handle: string | null;
-  status: "pending" | "running" | "completed" | "failed";
+  status: "pending" | "running" | "waiting" | "completed" | "failed";
   stats: Record<string, number>;
   error_message: string | null;
   started_at: string;
@@ -56,6 +56,8 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
   running:
     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
+  waiting:
+    "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
 function formatDuration(log: ImportLog): string {
@@ -109,6 +111,8 @@ function pipelineStatus(logs: ImportLog[]): string {
   if (completed === logs.length) return `${logs.length}/${logs.length} completed`;
   const running = logs.some((l) => l.status === "running");
   if (running) return `${completed}/${logs.length} completed (running)`;
+  const waiting = logs.some((l) => l.status === "waiting");
+  if (waiting) return `${completed}/${logs.length} completed (waiting on children)`;
   return `${completed}/${logs.length} completed (pending)`;
 }
 
@@ -116,6 +120,7 @@ function pipelineStatusStyle(logs: ImportLog[]): string {
   if (logs.some((l) => l.status === "failed")) return STATUS_STYLES.failed;
   if (logs.every((l) => l.status === "completed")) return STATUS_STYLES.completed;
   if (logs.some((l) => l.status === "running")) return STATUS_STYLES.running;
+  if (logs.some((l) => l.status === "waiting")) return STATUS_STYLES.waiting;
   return STATUS_STYLES.pending;
 }
 
@@ -192,9 +197,9 @@ function JobRow({
         <span
           className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[log.status] ?? ""}`}
         >
-          {(log.status === "running" || log.status === "pending") && (
-            <PulsingDot />
-          )}
+          {(log.status === "running" ||
+            log.status === "pending" ||
+            log.status === "waiting") && <PulsingDot />}
           {log.status}
         </span>
         {log.status === "pending" && log.scheduled_at && (
@@ -303,7 +308,10 @@ function PipelineGroup({
             className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${pipelineStatusStyle(logs)}`}
           >
             {logs.some(
-              (l) => l.status === "running" || l.status === "pending"
+              (l) =>
+                l.status === "running" ||
+                l.status === "pending" ||
+                l.status === "waiting"
             ) && <PulsingDot />}
             {pipelineStatus(logs)}
           </span>
