@@ -507,17 +507,24 @@ export default function AdminJobsPage() {
   }, [loadLogs]);
 
   // Realtime subscription
+  //
+  // Scoped to rows created in the last 24h so we don't ride along on
+  // every UPDATE to historical job_logs rows (backfills, daily sync
+  // status flips, etc). The initial fetch via recent_jobs() already
+  // pulls the current view of the page; realtime only needs to keep
+  // recent activity fresh. Subscription is captured once on mount;
+  // if it survives past midnight the cutoff is mildly stale, but the
+  // page is short-lived so a refresh rebuilds it.
   useEffect(() => {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const filter = `created_at=gte.${cutoff}`;
     const channel = supabase
       .channel("admin-jobs")
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "jobs", table: "job_logs" },
+        { event: "INSERT", schema: "jobs", table: "job_logs", filter },
         (payload) => {
           const newLog = payload.new as ImportLog;
-          // No row-count cap: capping by rows mangles pipelines (same
-          // bug as the initial fetch). Page is admin-only and short-
-          // lived; in-memory growth is fine.
           setLogs((prev) => [newLog, ...prev]);
           const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
           toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
@@ -525,7 +532,7 @@ export default function AdminJobsPage() {
       )
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "jobs", table: "job_logs" },
+        { event: "UPDATE", schema: "jobs", table: "job_logs", filter },
         (payload) => {
           const updated = payload.new as ImportLog;
           setLogs((prev) =>
