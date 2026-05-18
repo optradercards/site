@@ -55,6 +55,7 @@ const adminNavItems: NavItem[] = [
     label: "Shiny",
     icon: "📥",
     children: [
+      { href: "/admin/shiny-settings", label: "Settings", icon: "🔑" },
       { href: "/admin/import-brands", label: "Import Brands", icon: "🏷️" },
       { href: "/admin/import-products", label: "Import Products", icon: "💾" },
       { href: "/admin/import-collections", label: "Import Collections", icon: "📦" },

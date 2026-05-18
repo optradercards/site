@@ -42,6 +42,8 @@ interface Stats {
   groups: number;
   sets: number;
   products: number;
+  sealed: number;
+  withMarketData: number;
 }
 
 export default function CatalogPage() {
@@ -57,6 +59,8 @@ export default function CatalogPage() {
     groups: 0,
     sets: 0,
     products: 0,
+    sealed: 0,
+    withMarketData: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,29 +109,25 @@ export default function CatalogPage() {
       }
 
       // Load counts
-      const [brandsCount, setListsCount, groupsCount, setsCount, cardsCount] =
-        await Promise.all([
-          supabase
-            .schema("cards")
-            .from("brands")
-            .select("*", { count: "exact", head: true }),
-          supabase
-            .schema("cards")
-            .from("set_lists")
-            .select("*", { count: "exact", head: true }),
-          supabase
-            .schema("cards")
-            .from("groups")
-            .select("*", { count: "exact", head: true }),
-          supabase
-            .schema("cards")
-            .from("sets")
-            .select("*", { count: "exact", head: true }),
-          supabase
-            .schema("cards")
-            .from("products")
-            .select("*", { count: "exact", head: true }),
-        ]);
+      const head = { count: "exact" as const, head: true };
+      const c = supabase.schema("cards");
+      const [
+        brandsCount,
+        setListsCount,
+        groupsCount,
+        setsCount,
+        cardsCount,
+        sealedCount,
+        marketDataCount,
+      ] = await Promise.all([
+        c.from("brands").select("*", head),
+        c.from("set_lists").select("*", head),
+        c.from("groups").select("*", head),
+        c.from("sets").select("*", head),
+        c.from("products").select("*", head),
+        c.from("products").select("*", head).eq("product_kind", "sealed"),
+        c.from("market_data").select("*", head),
+      ]);
 
       setStats({
         brands: brandsCount.count ?? 0,
@@ -135,6 +135,8 @@ export default function CatalogPage() {
         groups: groupsCount.count ?? 0,
         sets: setsCount.count ?? 0,
         products: cardsCount.count ?? 0,
+        sealed: sealedCount.count ?? 0,
+        withMarketData: marketDataCount.count ?? 0,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load catalog");
@@ -180,6 +182,8 @@ export default function CatalogPage() {
     { label: "Groups", value: stats.groups },
     { label: "Sets", value: stats.sets },
     { label: "Products", value: stats.products },
+    { label: "Sealed Products", value: stats.sealed },
+    { label: "With Market Data", value: stats.withMarketData },
   ];
 
   return (
@@ -194,7 +198,7 @@ export default function CatalogPage() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {statCards.map((stat) => (
           <div
             key={stat.label}

@@ -4,6 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
+interface Stats {
+  total: number;
+  singles: number;
+  sealed: number;
+  foil: number;
+  withMarketData: number;
+  brands: number;
+}
+
 interface CardRow {
   id: string;
   name: string;
@@ -11,10 +20,14 @@ interface CardRow {
   rarity: string | null;
   set_name: string | null;
   brand_name: string | null;
+  language: string | null;
   image_url: string | null;
-  ungraded_price: number | null;
-  psa_10_price: number | null;
+  price_ungraded: number | null;
+  price_psa_9: number | null;
+  price_psa_10: number | null;
   product_kind: "single" | "sealed";
+  is_foil: boolean | null;
+  total_count: number | null;
 }
 
 function formatPrice(cents: number | null): string {
@@ -28,7 +41,31 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [stats, setStats] = useState<Stats | null>(null);
   const pageSize = 50;
+
+  useEffect(() => {
+    (async () => {
+      const cards = supabase.schema("cards");
+      const head = { count: "exact" as const, head: true };
+      const [total, singles, sealed, foil, marketData, brands] = await Promise.all([
+        cards.from("products").select("*", head),
+        cards.from("products").select("*", head).eq("product_kind", "single"),
+        cards.from("products").select("*", head).eq("product_kind", "sealed"),
+        cards.from("products").select("*", head).eq("is_foil", true),
+        cards.from("market_data").select("*", head),
+        cards.from("brands").select("*", head),
+      ]);
+      setStats({
+        total: total.count ?? 0,
+        singles: singles.count ?? 0,
+        sealed: sealed.count ?? 0,
+        foil: foil.count ?? 0,
+        withMarketData: marketData.count ?? 0,
+        brands: brands.count ?? 0,
+      });
+    })();
+  }, [supabase]);
 
   const loadCards = useCallback(async () => {
     setLoading(true);
@@ -71,6 +108,30 @@ export default function ProductsPage() {
         </p>
       </div>
 
+      {/* Stat Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[
+          { label: "Total", value: stats?.total },
+          { label: "Singles", value: stats?.singles },
+          { label: "Sealed", value: stats?.sealed },
+          { label: "Foil", value: stats?.foil },
+          { label: "With Market Data", value: stats?.withMarketData },
+          { label: "Brands", value: stats?.brands },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4"
+          >
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {stat.label}
+            </p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+              {stat.value == null ? "…" : stat.value.toLocaleString()}
+            </p>
+          </div>
+        ))}
+      </div>
+
       {/* Search */}
       <div>
         <input
@@ -103,9 +164,12 @@ export default function ProductsPage() {
                   <th className="px-4 py-3">Rarity</th>
                   <th className="px-4 py-3">Set</th>
                   <th className="px-4 py-3">Brand</th>
+                  <th className="px-4 py-3">Lang</th>
                   <th className="px-4 py-3">Ungraded</th>
+                  <th className="px-4 py-3">PSA 9</th>
                   <th className="px-4 py-3">PSA 10</th>
                   <th className="px-4 py-3">Type</th>
+                  <th className="px-4 py-3">Pop</th>
                 </tr>
               </thead>
               <tbody className="text-gray-700 dark:text-gray-300">
@@ -145,11 +209,17 @@ export default function ProductsPage() {
                     </td>
                     <td className="px-4 py-2">{card.set_name ?? "—"}</td>
                     <td className="px-4 py-2">{card.brand_name ?? "—"}</td>
-                    <td className="px-4 py-2">
-                      {formatPrice(card.ungraded_price)}
+                    <td className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                      {card.language ?? "—"}
                     </td>
                     <td className="px-4 py-2">
-                      {formatPrice(card.psa_10_price)}
+                      {formatPrice(card.price_ungraded)}
+                    </td>
+                    <td className="px-4 py-2">
+                      {formatPrice(card.price_psa_9)}
+                    </td>
+                    <td className="px-4 py-2">
+                      {formatPrice(card.price_psa_10)}
                     </td>
                     <td className="px-4 py-2">
                       <span
@@ -161,6 +231,14 @@ export default function ProductsPage() {
                       >
                         {card.product_kind}
                       </span>
+                      {card.is_foil && (
+                        <span className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                          foil
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
+                      {card.total_count?.toLocaleString() ?? "—"}
                     </td>
                   </tr>
                 ))}

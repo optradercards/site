@@ -121,6 +121,9 @@ function pipelineStatusStyle(logs: ImportLog[]): string {
 function JobRow({
   log,
   depth = 0,
+  hasChildren = false,
+  expanded = false,
+  onToggleExpand,
   expandedError,
   setExpandedError,
   onRetry,
@@ -128,6 +131,9 @@ function JobRow({
 }: {
   log: ImportLog;
   depth?: number;
+  hasChildren?: boolean;
+  expanded?: boolean;
+  onToggleExpand?: (id: string) => void;
   expandedError: string | null;
   setExpandedError: (id: string | null) => void;
   onRetry: (id: string) => void;
@@ -143,11 +149,20 @@ function JobRow({
             aria-hidden="true"
           />
         )}
-        {depth > 0 && (
-          <span className="inline-block w-3 text-gray-300 dark:text-gray-600 mr-1">
+        {hasChildren ? (
+          <button
+            type="button"
+            onClick={() => onToggleExpand?.(log.id)}
+            className="inline-block w-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs mr-1 cursor-pointer"
+            aria-label={expanded ? "Collapse children" : "Expand children"}
+          >
+            {expanded ? "▼" : "▶"}
+          </button>
+        ) : depth > 0 ? (
+          <span className="inline-block w-4 text-gray-300 dark:text-gray-600 text-xs mr-1">
             └
           </span>
-        )}
+        ) : null}
         {new Date(log.created_at).toLocaleDateString()}{" "}
         <span className="text-gray-400 dark:text-gray-500">
           {new Date(log.created_at).toLocaleTimeString([], {
@@ -229,6 +244,8 @@ function PipelineGroup({
   setExpandedError,
   expandedPipelines,
   togglePipeline,
+  expandedJobs,
+  toggleJob,
   onRetry,
   retrying,
 }: {
@@ -238,6 +255,8 @@ function PipelineGroup({
   setExpandedError: (id: string | null) => void;
   expandedPipelines: Set<string>;
   togglePipeline: (id: string) => void;
+  expandedJobs: Set<string>;
+  toggleJob: (id: string) => void;
   onRetry: (id: string) => void;
   retrying: Set<string>;
 }) {
@@ -288,6 +307,8 @@ function PipelineGroup({
       {expanded && renderTree(logs, {
         expandedError,
         setExpandedError,
+        expandedJobs,
+        toggleJob,
         onRetry,
         retrying,
       })}
@@ -302,6 +323,8 @@ function renderTree(
   ctx: {
     expandedError: string | null;
     setExpandedError: (id: string | null) => void;
+    expandedJobs: Set<string>;
+    toggleJob: (id: string) => void;
     onRetry: (id: string) => void;
     retrying: Set<string>;
   }
@@ -327,18 +350,25 @@ function renderTree(
   function walk(parentKey: string | null, depth: number) {
     const kids = childrenByParent.get(parentKey) ?? [];
     for (const log of kids) {
+      const hasChildren = (childrenByParent.get(log.id) ?? []).length > 0;
+      const isExpanded = ctx.expandedJobs.has(log.id);
       rows.push(
         <JobRow
           key={log.id}
           log={log}
           depth={depth}
+          hasChildren={hasChildren}
+          expanded={isExpanded}
+          onToggleExpand={ctx.toggleJob}
           expandedError={ctx.expandedError}
           setExpandedError={ctx.setExpandedError}
           onRetry={ctx.onRetry}
           isRetrying={ctx.retrying.has(log.id)}
         />
       );
-      walk(log.id, depth + 1);
+      if (hasChildren && isExpanded) {
+        walk(log.id, depth + 1);
+      }
     }
   }
   walk(null, 1);
@@ -353,6 +383,7 @@ export default function AdminJobsPage() {
   const [expandedPipelines, setExpandedPipelines] = useState<Set<string>>(
     new Set()
   );
+  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
 
@@ -365,16 +396,33 @@ export default function AdminJobsPage() {
     });
   }, []);
 
+  const toggleJob = useCallback((jobId: string) => {
+    setExpandedJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }, []);
+
   const retryJob = useCallback(async (jobId: string) => {
     setRetrying((prev) => new Set(prev).add(jobId));
     try {
-      // Reset failed jobs so run-job can process them
+      // Reset failed jobs so run-job can process them. Clear attempts
+      // too — otherwise run-job sees attempts >= MAX_ATTEMPTS on the
+      // first invocation and immediately marks failed again.
       const job = logs.find((l) => l.id === jobId);
       if (job?.status === "failed") {
         await supabase
           .schema("jobs")
           .from("job_logs")
-          .update({ status: "pending", error_message: null, completed_at: null })
+          .update({
+            status: "pending",
+            error_message: null,
+            completed_at: null,
+            attempts: 0,
+            scheduled_at: null,
+          })
           .eq("id", jobId);
       }
 
@@ -427,12 +475,12 @@ export default function AdminJobsPage() {
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
+    // Fetch the N most-recent pipeline groups with their full subtrees,
+    // not just N rows. See jobs.recent_jobs() — a row-based limit
+    // mangles pipelines whose parent is older than the window.
     const { data } = await supabase
       .schema("jobs")
-      .from("job_logs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(100);
+      .rpc("recent_jobs", { p_group_limit: 25 });
     setLogs((data ?? []) as ImportLog[]);
     setLoading(false);
   }, [supabase]);
@@ -450,7 +498,10 @@ export default function AdminJobsPage() {
         { event: "INSERT", schema: "jobs", table: "job_logs" },
         (payload) => {
           const newLog = payload.new as ImportLog;
-          setLogs((prev) => [newLog, ...prev].slice(0, 100));
+          // No row-count cap: capping by rows mangles pipelines (same
+          // bug as the initial fetch). Page is admin-only and short-
+          // lived; in-memory growth is fine.
+          setLogs((prev) => [newLog, ...prev]);
           const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
           toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
         }
@@ -625,6 +676,8 @@ export default function AdminJobsPage() {
                       setExpandedError={setExpandedError}
                       expandedPipelines={expandedPipelines}
                       togglePipeline={togglePipeline}
+                      expandedJobs={expandedJobs}
+                      toggleJob={toggleJob}
                       onRetry={retryJob}
                       retrying={retrying}
                     />
