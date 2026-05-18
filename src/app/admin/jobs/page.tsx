@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 
@@ -222,16 +223,24 @@ function JobRow({
           <span className="text-gray-400">—</span>
         )}
       </td>
-      <td className="px-4 py-3">
-        {(log.status === "pending" || log.status === "failed") && (
-          <button
-            onClick={() => onRetry(log.id)}
-            disabled={isRetrying}
-            className="px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      <td className="px-4 py-3 whitespace-nowrap">
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/admin/jobs/${log.id}`}
+            className="px-2 py-1 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/40 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
-            {isRetrying ? "Retrying…" : "Retry"}
-          </button>
-        )}
+            View
+          </Link>
+          {(log.status === "pending" || log.status === "failed") && (
+            <button
+              onClick={() => onRetry(log.id)}
+              disabled={isRetrying}
+              className="px-2 py-1 text-xs font-medium text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isRetrying ? "Retrying…" : "Retry"}
+            </button>
+          )}
+        </div>
       </td>
     </tr>
   );
