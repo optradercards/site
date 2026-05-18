@@ -58,7 +58,24 @@ const STATUS_STYLES: Record<string, string> = {
     "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
   waiting:
     "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
+  // Parent rolled up to completed but at least one descendant
+  // failed — see error_message ("N child job(s) failed") + stats
+  // .failed_children. Rendered amber to distinguish from clean
+  // completion without poisoning the dependency chain.
+  completed_with_errors:
+    "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
 };
+
+function effectiveStatus(log: ImportLog): keyof typeof STATUS_STYLES {
+  if (log.status === "completed" && log.error_message) return "completed_with_errors";
+  return log.status;
+}
+
+function statusLabel(log: ImportLog): string {
+  return effectiveStatus(log) === "completed_with_errors"
+    ? "completed (errors)"
+    : log.status;
+}
 
 function formatDuration(log: ImportLog): string {
   if (!log.completed_at) {
@@ -195,12 +212,12 @@ function JobRow({
       </td>
       <td className="px-4 py-3">
         <span
-          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[log.status] ?? ""}`}
+          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[effectiveStatus(log)] ?? ""}`}
         >
           {(log.status === "running" ||
             log.status === "pending" ||
             log.status === "waiting") && <PulsingDot />}
-          {log.status}
+          {statusLabel(log)}
         </span>
         {log.status === "pending" && log.scheduled_at && (
           <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">
