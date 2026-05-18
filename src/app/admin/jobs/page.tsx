@@ -253,7 +253,9 @@ function JobRow({
           >
             View
           </Link>
-          {(log.status === "pending" || log.status === "failed") && (
+          {(log.status === "pending" ||
+            log.status === "failed" ||
+            effectiveStatus(log) === "completed_with_errors") && (
             <button
               onClick={() => onRetry(log.id)}
               disabled={isRetrying}
@@ -439,31 +441,74 @@ export default function AdminJobsPage() {
     });
   }, []);
 
+  // Reset a list of failed job_logs rows back to pending so the
+  // dispatcher / run-job can process them again. Bulk update + bulk
+  // invoke for the all-failed case; the single-job path uses the same
+  // helper with one id.
+  const resetAndInvoke = useCallback(async (jobIds: string[]) => {
+    if (jobIds.length === 0) return 0;
+    // Bulk reset of any failed rows in the set (no-op for non-failed
+    // ids since the WHERE clause filters by status).
+    await supabase
+      .schema("jobs")
+      .from("job_logs")
+      .update({
+        status: "pending",
+        error_message: null,
+        completed_at: null,
+        attempts: 0,
+        scheduled_at: null,
+      })
+      .in("id", jobIds)
+      .eq("status", "failed");
+
+    let triggered = 0;
+    await Promise.all(
+      jobIds.map(async (id) => {
+        try {
+          await supabase.functions.invoke("run-job", { body: { job_id: id } });
+          triggered++;
+        } catch {
+          // continue with remaining jobs
+        }
+      })
+    );
+    return triggered;
+  }, [supabase]);
+
   const retryJob = useCallback(async (jobId: string) => {
+    const job = logs.find((l) => l.id === jobId);
     setRetrying((prev) => new Set(prev).add(jobId));
     try {
-      // Reset failed jobs so run-job can process them. Clear attempts
-      // too — otherwise run-job sees attempts >= MAX_ATTEMPTS on the
-      // first invocation and immediately marks failed again.
-      const job = logs.find((l) => l.id === jobId);
-      if (job?.status === "failed") {
-        await supabase
+      // For a parent in "completed (errors)" the parent's own work
+      // is done — retrying it would re-run the worker and re-queue
+      // children. Instead retry the failed direct children; the
+      // rollup trigger will clear the parent's amber state once they
+      // all succeed.
+      if (
+        job &&
+        job.status === "completed" &&
+        job.error_message &&
+        (job.error_message.includes("child job(s) failed") ||
+          (job.stats as Record<string, unknown> | null)?.failed_children)
+      ) {
+        const { data: failedChildren } = await supabase
           .schema("jobs")
           .from("job_logs")
-          .update({
-            status: "pending",
-            error_message: null,
-            completed_at: null,
-            attempts: 0,
-            scheduled_at: null,
-          })
-          .eq("id", jobId);
+          .select("id")
+          .eq("parent_id", jobId)
+          .eq("status", "failed");
+        const childIds = (failedChildren ?? []).map((r: { id: string }) => r.id);
+        if (childIds.length === 0) {
+          toast.info("No failed children to retry");
+        } else {
+          const triggered = await resetAndInvoke(childIds);
+          toast.info(`Retried ${triggered} failed child job(s)`);
+        }
+        return;
       }
 
-      const { error } = await supabase.functions.invoke("run-job", {
-        body: { job_id: jobId },
-      });
-      if (error) throw error;
+      await resetAndInvoke([jobId]);
       toast.info("Job triggered");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to retry job");
@@ -474,7 +519,7 @@ export default function AdminJobsPage() {
         return next;
       });
     }
-  }, [supabase, logs]);
+  }, [supabase, logs, resetAndInvoke]);
 
   const retryAllPending = useCallback(async () => {
     const pendingJobs = logs.filter((l) => l.status === "pending");
@@ -488,24 +533,69 @@ export default function AdminJobsPage() {
       ids.forEach((id) => next.add(id));
       return next;
     });
-    let triggered = 0;
-    for (const job of pendingJobs) {
-      try {
-        await supabase.functions.invoke("run-job", {
-          body: { job_id: job.id },
-        });
-        triggered++;
-      } catch {
-        // continue with remaining jobs
-      }
-    }
+    const triggered = await resetAndInvoke(ids);
     setRetrying((prev) => {
       const next = new Set(prev);
       ids.forEach((id) => next.delete(id));
       return next;
     });
     toast.info(`Triggered ${triggered} pending job(s)`);
-  }, [supabase, logs]);
+  }, [logs, resetAndInvoke]);
+
+  const retryAllFailed = useCallback(async () => {
+    // Two buckets: rows with status='failed' (themselves retried),
+    // and rows in 'completed' with error_message indicating failed
+    // children (their failed children get retried). Together these
+    // cover every red/amber row visible on the page.
+    const directFailures = logs.filter((l) => l.status === "failed");
+    const parentsWithFailedChildren = logs.filter(
+      (l) =>
+        l.status === "completed" &&
+        l.error_message &&
+        (l.error_message.includes("child job(s) failed") ||
+          (l.stats as Record<string, unknown> | null)?.failed_children)
+    );
+
+    if (directFailures.length === 0 && parentsWithFailedChildren.length === 0) {
+      toast.info("No failed jobs");
+      return;
+    }
+
+    const idsToInvoke = directFailures.map((j) => j.id);
+
+    // Pull failed children for the amber parents in one query so we
+    // can roll them into the same reset+invoke pass.
+    if (parentsWithFailedChildren.length > 0) {
+      const parentIds = parentsWithFailedChildren.map((p) => p.id);
+      const { data: failedKids } = await supabase
+        .schema("jobs")
+        .from("job_logs")
+        .select("id")
+        .in("parent_id", parentIds)
+        .eq("status", "failed");
+      for (const r of (failedKids ?? []) as Array<{ id: string }>) {
+        idsToInvoke.push(r.id);
+      }
+    }
+
+    if (idsToInvoke.length === 0) {
+      toast.info("No failed rows to retry");
+      return;
+    }
+
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      idsToInvoke.forEach((id) => next.add(id));
+      return next;
+    });
+    const triggered = await resetAndInvoke(idsToInvoke);
+    setRetrying((prev) => {
+      const next = new Set(prev);
+      idsToInvoke.forEach((id) => next.delete(id));
+      return next;
+    });
+    toast.info(`Retried ${triggered} failed job(s)`);
+  }, [logs, supabase, resetAndInvoke]);
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -655,6 +745,18 @@ export default function AdminJobsPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          {logs.some(
+            (l) =>
+              l.status === "failed" ||
+              effectiveStatus(l) === "completed_with_errors"
+          ) && (
+            <button
+              onClick={retryAllFailed}
+              className="px-4 py-2 text-sm font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg hover:bg-orange-100 dark:hover:bg-orange-900/40 transition-colors"
+            >
+              Retry All Failed
+            </button>
+          )}
           {logs.some((l) => l.status === "pending") && (
             <button
               onClick={retryAllPending}
