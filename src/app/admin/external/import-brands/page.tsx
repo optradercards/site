@@ -141,17 +141,11 @@ export default function BrandSetImportPage() {
         .filter(Boolean)
         .join(', ');
 
-      const dagId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : undefined;
-
       await createJob(
         acct.account_id,
         'shiny-brands',
         brandNames || `${selectedBrands.size} brands`,
         { brandIds: Array.from(selectedBrands) },
-        { dag_id: dagId },
       );
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Failed to start import');

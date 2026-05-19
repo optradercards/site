@@ -17,7 +17,6 @@ interface ImportLog {
   completed_at: string | null;
   created_at: string;
   depends_on: string[] | null;
-  dag_id: string | null;
   parent_id: string | null;
   attempts: number | null;
   scheduled_at: string | null;
@@ -117,46 +116,51 @@ function PulsingDot() {
   );
 }
 
-type DisplayItem =
-  | { kind: "standalone"; log: ImportLog }
-  | { kind: "pipeline"; dagId: string; logs: ImportLog[] };
+// Roll up the parent's own status with its descendants into a single
+// summary string + styling for the table row. Only used when the root
+// actually has descendants — for standalone jobs we render the row's
+// own status directly.
+function rollupSummary(root: ImportLog, descendants: ImportLog[]) {
+  const all = [root, ...descendants];
+  const completed = all.filter((l) => l.status === "completed").length;
+  const failed = all.some((l) => l.status === "failed");
+  const running = all.some((l) => l.status === "running");
+  const waiting = all.some((l) => l.status === "waiting");
 
-function pipelineStatus(logs: ImportLog[]): string {
-  const completed = logs.filter((l) => l.status === "completed").length;
-  const failed = logs.some((l) => l.status === "failed");
-  if (failed) return `${completed}/${logs.length} completed (failed)`;
-  if (completed === logs.length) return `${logs.length}/${logs.length} completed`;
-  const running = logs.some((l) => l.status === "running");
-  if (running) return `${completed}/${logs.length} completed (running)`;
-  const waiting = logs.some((l) => l.status === "waiting");
-  if (waiting) return `${completed}/${logs.length} completed (waiting on children)`;
-  return `${completed}/${logs.length} completed (pending)`;
-}
-
-function pipelineStatusStyle(logs: ImportLog[]): string {
-  if (logs.some((l) => l.status === "failed")) return STATUS_STYLES.failed;
-  if (logs.every((l) => l.status === "completed")) return STATUS_STYLES.completed;
-  if (logs.some((l) => l.status === "running")) return STATUS_STYLES.running;
-  if (logs.some((l) => l.status === "waiting")) return STATUS_STYLES.waiting;
-  return STATUS_STYLES.pending;
+  let label: string;
+  let style: string;
+  if (failed) {
+    label = `${completed}/${all.length} completed (failed)`;
+    style = STATUS_STYLES.failed;
+  } else if (completed === all.length) {
+    label = `${all.length}/${all.length} completed`;
+    style = STATUS_STYLES.completed;
+  } else if (running) {
+    label = `${completed}/${all.length} completed (running)`;
+    style = STATUS_STYLES.running;
+  } else if (waiting) {
+    label = `${completed}/${all.length} completed (waiting)`;
+    style = STATUS_STYLES.waiting;
+  } else {
+    label = `${completed}/${all.length} completed (pending)`;
+    style = STATUS_STYLES.pending;
+  }
+  const inFlight = running || waiting || all.some((l) => l.status === "pending");
+  return { label, style, inFlight };
 }
 
 function JobRow({
   log,
-  depth = 0,
-  hasChildren = false,
-  expanded = false,
-  onToggleExpand,
+  childCount,
+  rollup,
   expandedError,
   setExpandedError,
   onRetry,
   isRetrying,
 }: {
   log: ImportLog;
-  depth?: number;
-  hasChildren?: boolean;
-  expanded?: boolean;
-  onToggleExpand?: (id: string) => void;
+  childCount: number;
+  rollup: ReturnType<typeof rollupSummary> | null;
   expandedError: string | null;
   setExpandedError: (id: string | null) => void;
   onRetry: (id: string) => void;
@@ -165,27 +169,6 @@ function JobRow({
   return (
     <tr className="border-b border-gray-100 dark:border-gray-700/50">
       <td className="px-4 py-3 whitespace-nowrap">
-        {depth > 0 && (
-          <span
-            className="inline-block"
-            style={{ width: `${depth * 16}px` }}
-            aria-hidden="true"
-          />
-        )}
-        {hasChildren ? (
-          <button
-            type="button"
-            onClick={() => onToggleExpand?.(log.id)}
-            className="inline-block w-4 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs mr-1 cursor-pointer"
-            aria-label={expanded ? "Collapse children" : "Expand children"}
-          >
-            {expanded ? "▼" : "▶"}
-          </button>
-        ) : depth > 0 ? (
-          <span className="inline-block w-4 text-gray-300 dark:text-gray-600 text-xs mr-1">
-            └
-          </span>
-        ) : null}
         {new Date(log.created_at).toLocaleDateString()}{" "}
         <span className="text-gray-400 dark:text-gray-500">
           {new Date(log.created_at).toLocaleTimeString([], {
@@ -198,6 +181,14 @@ function JobRow({
         <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
           {PLATFORM_LABELS[log.platform] ?? log.platform}
         </span>
+        {childCount > 0 && (
+          <span
+            className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+            title={`${childCount} child job${childCount === 1 ? "" : "s"}`}
+          >
+            +{childCount}
+          </span>
+        )}
         {log.attempts != null && log.attempts > 0 && (
           <span
             className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
@@ -211,18 +202,29 @@ function JobRow({
         {log.handle || "—"}
       </td>
       <td className="px-4 py-3">
-        <span
-          className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[effectiveStatus(log)] ?? ""}`}
-        >
-          {(log.status === "running" ||
-            log.status === "pending" ||
-            log.status === "waiting") && <PulsingDot />}
-          {statusLabel(log)}
-        </span>
-        {log.status === "pending" && log.scheduled_at && (
-          <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">
-            {formatScheduledIn(log.scheduled_at)}
+        {rollup ? (
+          <span
+            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${rollup.style}`}
+          >
+            {rollup.inFlight && <PulsingDot />}
+            {rollup.label}
           </span>
+        ) : (
+          <>
+            <span
+              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[effectiveStatus(log)] ?? ""}`}
+            >
+              {(log.status === "running" ||
+                log.status === "pending" ||
+                log.status === "waiting") && <PulsingDot />}
+              {statusLabel(log)}
+            </span>
+            {log.status === "pending" && log.scheduled_at && (
+              <span className="ml-1.5 text-[10px] text-gray-500 dark:text-gray-400">
+                {formatScheduledIn(log.scheduled_at)}
+              </span>
+            )}
+          </>
         )}
       </td>
       <td className="px-4 py-3 text-xs">{formatStats(log)}</td>
@@ -270,176 +272,13 @@ function JobRow({
   );
 }
 
-function PipelineGroup({
-  dagId,
-  logs,
-  expandedError,
-  setExpandedError,
-  expandedPipelines,
-  togglePipeline,
-  expandedJobs,
-  toggleJob,
-  onRetry,
-  retrying,
-}: {
-  dagId: string;
-  logs: ImportLog[];
-  expandedError: string | null;
-  setExpandedError: (id: string | null) => void;
-  expandedPipelines: Set<string>;
-  togglePipeline: (id: string) => void;
-  expandedJobs: Set<string>;
-  toggleJob: (id: string) => void;
-  onRetry: (id: string) => void;
-  retrying: Set<string>;
-}) {
-  const expanded = expandedPipelines.has(dagId);
-  const earliest = logs[logs.length - 1];
-
-  return (
-    <>
-      <tr
-        className="border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30"
-        onClick={() => togglePipeline(dagId)}
-      >
-        <td className="px-4 py-3 whitespace-nowrap">
-          <span className="inline-block w-4 text-gray-400 text-xs">
-            {expanded ? "▼" : "▶"}
-          </span>
-          {new Date(earliest.created_at).toLocaleDateString()}{" "}
-          <span className="text-gray-400 dark:text-gray-500">
-            {new Date(earliest.created_at).toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-        </td>
-        <td className="px-4 py-3">
-          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-            Pipeline ({logs.length} jobs)
-          </span>
-        </td>
-        <td className="px-4 py-3 font-mono text-xs max-w-[200px] truncate">
-          {earliest.handle || "—"}
-        </td>
-        <td className="px-4 py-3">
-          <span
-            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${pipelineStatusStyle(logs)}`}
-          >
-            {logs.some(
-              (l) =>
-                l.status === "running" ||
-                l.status === "pending" ||
-                l.status === "waiting"
-            ) && <PulsingDot />}
-            {pipelineStatus(logs)}
-          </span>
-        </td>
-        <td className="px-4 py-3 text-xs">—</td>
-        <td className="px-4 py-3 whitespace-nowrap">—</td>
-        <td className="px-4 py-3 text-xs">—</td>
-        <td className="px-4 py-3" />
-      </tr>
-      {expanded && renderTree(logs, {
-        expandedError,
-        setExpandedError,
-        expandedJobs,
-        toggleJob,
-        onRetry,
-        retrying,
-      })}
-    </>
-  );
-}
-
-// Render logs as a nested tree using parent_id. Roots within the group
-// are those whose parent_id is null or points outside the group.
-function renderTree(
-  logs: ImportLog[],
-  ctx: {
-    expandedError: string | null;
-    setExpandedError: (id: string | null) => void;
-    expandedJobs: Set<string>;
-    toggleJob: (id: string) => void;
-    onRetry: (id: string) => void;
-    retrying: Set<string>;
-  }
-) {
-  const idsInGroup = new Set(logs.map((l) => l.id));
-  const childrenByParent = new Map<string | null, ImportLog[]>();
-  for (const log of logs) {
-    const key =
-      log.parent_id && idsInGroup.has(log.parent_id) ? log.parent_id : null;
-    const arr = childrenByParent.get(key) ?? [];
-    arr.push(log);
-    childrenByParent.set(key, arr);
-  }
-  for (const arr of childrenByParent.values()) {
-    arr.sort(
-      (a, b) =>
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
-  }
-  const rows: React.ReactNode[] = [];
-  // Depth 1 because the dag header row sits at depth 0; children indent
-  // from there.
-  function walk(parentKey: string | null, depth: number) {
-    const kids = childrenByParent.get(parentKey) ?? [];
-    for (const log of kids) {
-      const hasChildren = (childrenByParent.get(log.id) ?? []).length > 0;
-      const isExpanded = ctx.expandedJobs.has(log.id);
-      rows.push(
-        <JobRow
-          key={log.id}
-          log={log}
-          depth={depth}
-          hasChildren={hasChildren}
-          expanded={isExpanded}
-          onToggleExpand={ctx.toggleJob}
-          expandedError={ctx.expandedError}
-          setExpandedError={ctx.setExpandedError}
-          onRetry={ctx.onRetry}
-          isRetrying={ctx.retrying.has(log.id)}
-        />
-      );
-      if (hasChildren && isExpanded) {
-        walk(log.id, depth + 1);
-      }
-    }
-  }
-  walk(null, 1);
-  return rows;
-}
-
 export default function AdminJobsPage() {
   const supabase = createClient();
   const [logs, setLogs] = useState<ImportLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedError, setExpandedError] = useState<string | null>(null);
-  const [expandedPipelines, setExpandedPipelines] = useState<Set<string>>(
-    new Set()
-  );
-  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [retrying, setRetrying] = useState<Set<string>>(new Set());
-
-  const togglePipeline = useCallback((dagId: string) => {
-    setExpandedPipelines((prev) => {
-      const next = new Set(prev);
-      if (next.has(dagId)) next.delete(dagId);
-      else next.add(dagId);
-      return next;
-    });
-  }, []);
-
-  const toggleJob = useCallback((jobId: string) => {
-    setExpandedJobs((prev) => {
-      const next = new Set(prev);
-      if (next.has(jobId)) next.delete(jobId);
-      else next.add(jobId);
-      return next;
-    });
-  }, []);
 
   // Reset a list of failed job_logs rows back to pending so the
   // dispatcher / run-job can process them again. Bulk update + bulk
@@ -633,8 +472,12 @@ export default function AdminJobsPage() {
         (payload) => {
           const newLog = payload.new as ImportLog;
           setLogs((prev) => [newLog, ...prev]);
-          const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
-          toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
+          // Toast only for new top-level jobs; child inserts are
+          // visible via the row's rollup count without spamming.
+          if (newLog.parent_id == null) {
+            const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
+            toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
+          }
         }
       )
       .on(
@@ -645,11 +488,15 @@ export default function AdminJobsPage() {
           setLogs((prev) =>
             prev.map((log) => (log.id === updated.id ? updated : log))
           );
-          const label = PLATFORM_LABELS[updated.platform] ?? updated.platform;
-          if (updated.status === "completed") {
-            toast.success(`${label} completed${updated.handle ? ` (${updated.handle})` : ""}`);
-          } else if (updated.status === "failed") {
-            toast.error(`${label} failed${updated.handle ? ` (${updated.handle})` : ""}`);
+          // Only toast on top-level job completion/failure — child
+          // status churn would otherwise drown the user.
+          if (updated.parent_id == null) {
+            const label = PLATFORM_LABELS[updated.platform] ?? updated.platform;
+            if (updated.status === "completed") {
+              toast.success(`${label} completed${updated.handle ? ` (${updated.handle})` : ""}`);
+            } else if (updated.status === "failed") {
+              toast.error(`${label} failed${updated.handle ? ` (${updated.handle})` : ""}`);
+            }
           }
         }
       )
@@ -671,66 +518,54 @@ export default function AdminJobsPage() {
     return () => clearInterval(id);
   }, [logs]);
 
-  // Group logs into standalone jobs and pipeline groups
-  const displayItems = useMemo(() => {
-    const pipelineMap = new Map<string, ImportLog[]>();
-    const standaloneList: ImportLog[] = [];
+  // Build the list of top-level rows.
+  //
+  // For each row, walk parent_id up as far as we can within the loaded
+  // set. The highest ancestor we reach is that row's visible root. Rows
+  // whose parent_id is NULL — or points outside the window — are roots
+  // themselves. Everything else collapses under its root and only shows
+  // up when you drill in.
+  const rootRows = useMemo(() => {
+    const logsById = new Map<string, ImportLog>();
+    for (const log of logs) logsById.set(log.id, log);
 
-    // First pass: group jobs with a dag_id
+    function findRoot(log: ImportLog): ImportLog {
+      let current = log;
+      const seen = new Set<string>();
+      while (current.parent_id && logsById.has(current.parent_id)) {
+        if (seen.has(current.id)) break; // cycle defense
+        seen.add(current.id);
+        current = logsById.get(current.parent_id)!;
+      }
+      return current;
+    }
+
+    const groups = new Map<
+      string,
+      { root: ImportLog; descendants: ImportLog[] }
+    >();
     for (const log of logs) {
-      if (log.dag_id) {
-        const group = pipelineMap.get(log.dag_id);
-        if (group) group.push(log);
-        else pipelineMap.set(log.dag_id, [log]);
-      } else {
-        standaloneList.push(log);
+      const root = findRoot(log);
+      let group = groups.get(root.id);
+      if (!group) {
+        group = { root, descendants: [] };
+        groups.set(root.id, group);
       }
+      if (log.id !== root.id) group.descendants.push(log);
     }
 
-    // Second pass: pull standalone jobs into a pipeline if their id is used as a dag_id
-    const standalone = standaloneList.filter((log) => {
-      const group = pipelineMap.get(log.id);
-      if (group) {
-        group.push(log);
-        return false;
-      }
-      return true;
-    });
-
-    // Sort pipeline children by created_at ascending (execution order)
-    for (const group of pipelineMap.values()) {
-      group.sort(
+    return [...groups.values()]
+      .map(({ root, descendants }) => ({
+        root,
+        descendants,
+        rollup:
+          descendants.length > 0 ? rollupSummary(root, descendants) : null,
+      }))
+      .sort(
         (a, b) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          new Date(b.root.created_at).getTime() -
+          new Date(a.root.created_at).getTime()
       );
-    }
-
-    // Build display items, ordered by earliest created_at (desc)
-    const items: DisplayItem[] = [
-      ...standalone.map(
-        (log) => ({ kind: "standalone" as const, log })
-      ),
-      ...[...pipelineMap.entries()].map(([dagId, pLogs]) => ({
-        kind: "pipeline" as const,
-        dagId,
-        logs: pLogs,
-      })),
-    ];
-
-    // Sort by most recent first
-    items.sort((a, b) => {
-      const aDate =
-        a.kind === "standalone"
-          ? a.log.created_at
-          : a.logs[0].created_at;
-      const bDate =
-        b.kind === "standalone"
-          ? b.log.created_at
-          : b.logs[0].created_at;
-      return new Date(bDate).getTime() - new Date(aDate).getTime();
-    });
-
-    return items;
   }, [logs]);
 
   return (
@@ -741,7 +576,7 @@ export default function AdminJobsPage() {
             Jobs
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Live view of all import jobs across the platform.
+            Top-level import jobs. Open a row to see its children.
           </p>
         </div>
         <div className="flex gap-2">
@@ -780,7 +615,7 @@ export default function AdminJobsPage() {
           <p className="p-6 text-sm text-gray-500 dark:text-gray-400">
             Loading...
           </p>
-        ) : logs.length === 0 ? (
+        ) : rootRows.length === 0 ? (
           <p className="p-6 text-sm text-gray-500 dark:text-gray-400">
             No jobs yet.
           </p>
@@ -800,32 +635,18 @@ export default function AdminJobsPage() {
                 </tr>
               </thead>
               <tbody className="text-gray-700 dark:text-gray-300">
-                {displayItems.map((item) =>
-                  item.kind === "standalone" ? (
-                    <JobRow
-                      key={item.log.id}
-                      log={item.log}
-                      expandedError={expandedError}
-                      setExpandedError={setExpandedError}
-                      onRetry={retryJob}
-                      isRetrying={retrying.has(item.log.id)}
-                    />
-                  ) : (
-                    <PipelineGroup
-                      key={item.dagId}
-                      dagId={item.dagId}
-                      logs={item.logs}
-                      expandedError={expandedError}
-                      setExpandedError={setExpandedError}
-                      expandedPipelines={expandedPipelines}
-                      togglePipeline={togglePipeline}
-                      expandedJobs={expandedJobs}
-                      toggleJob={toggleJob}
-                      onRetry={retryJob}
-                      retrying={retrying}
-                    />
-                  )
-                )}
+                {rootRows.map(({ root, descendants, rollup }) => (
+                  <JobRow
+                    key={root.id}
+                    log={root}
+                    childCount={descendants.length}
+                    rollup={rollup}
+                    expandedError={expandedError}
+                    setExpandedError={setExpandedError}
+                    onRetry={retryJob}
+                    isRetrying={retrying.has(root.id)}
+                  />
+                ))}
               </tbody>
             </table>
           </div>

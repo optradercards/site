@@ -112,11 +112,6 @@ export default function CatalogSyncPage() {
       // enumerates brands and queues one shiny-discover-brand per brand.
       // Each brand job paginates Shiny and chains the actual
       // shiny-cards -> shiny-history import pipeline.
-      const dagId =
-        typeof crypto !== 'undefined' && 'randomUUID' in crypto
-          ? crypto.randomUUID()
-          : undefined;
-
       const { data, error: insertErr } = await supabase
         .schema('jobs')
         .from('job_logs')
@@ -126,7 +121,6 @@ export default function CatalogSyncPage() {
           handle: 'Full catalog',
           status: 'pending',
           payload: {},
-          dag_id: dagId,
         })
         .select('id')
         .single();

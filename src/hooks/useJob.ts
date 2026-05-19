@@ -33,7 +33,7 @@ export function useJob() {
       platform: string,
       handle: string,
       payload: Record<string, unknown>,
-      opts?: { depends_on?: string[]; dag_id?: string }
+      opts?: { depends_on?: string[]; parent_id?: string }
     ) => {
       // Clean up any previous subscription
       cleanup();
@@ -47,7 +47,7 @@ export function useJob() {
           status: "pending",
           payload,
           ...(opts?.depends_on && { depends_on: opts.depends_on }),
-          ...(opts?.dag_id && { dag_id: opts.dag_id }),
+          ...(opts?.parent_id && { parent_id: opts.parent_id }),
         })
         .select("id, status, stats, error_message")
         .single();

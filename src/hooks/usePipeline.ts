@@ -28,7 +28,7 @@ export function usePipeline() {
   const supabase = createClient();
   const [jobs, setJobs] = useState<PipelineJob[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const dagIdRef = useRef<string | null>(null);
+  const rootIdRef = useRef<string | null>(null);
 
   const cleanup = useCallback(() => {
     if (channelRef.current) {
@@ -45,11 +45,12 @@ export function usePipeline() {
     async (accountId: string, steps: PipelineStep[]) => {
       cleanup();
 
-      const dagId = crypto.randomUUID();
-      dagIdRef.current = dagId;
-
-      // Insert steps in order, collecting IDs to resolve dependsOn indices
+      // Insert steps in order, collecting IDs to resolve dependsOn indices.
+      // The first inserted job becomes the pipeline root; every subsequent
+      // job hangs off it via parent_id so the whole batch is reachable
+      // from one realtime filter and from a single tree walk.
       const createdIds: string[] = [];
+      let rootId: string | null = null;
 
       for (const step of steps) {
         const dependsOn = (step.dependsOn ?? []).map((idx) => {
@@ -61,24 +62,37 @@ export function usePipeline() {
           return createdIds[idx];
         });
 
+        const insertRow: {
+          account_id: string;
+          platform: string;
+          handle: string;
+          status: "pending";
+          payload: Record<string, unknown>;
+          depends_on: string[];
+          parent_id?: string;
+        } = {
+          account_id: accountId,
+          platform: step.platform,
+          handle: step.handle,
+          status: "pending",
+          payload: step.payload,
+          depends_on: dependsOn,
+        };
+        if (rootId) insertRow.parent_id = rootId;
+
         const { data: row, error } = await supabase
           .schema("jobs").from("job_logs")
-          .insert({
-            account_id: accountId,
-            platform: step.platform,
-            handle: step.handle,
-            status: "pending",
-            payload: step.payload,
-            dag_id: dagId,
-            depends_on: dependsOn,
-          })
+          .insert(insertRow)
           .select("id, platform, status, stats, error_message")
           .single();
 
         if (error) throw error;
 
         createdIds.push(row.id);
+        if (rootId === null) rootId = row.id;
       }
+
+      rootIdRef.current = rootId;
 
       // Set initial jobs state
       const initial: PipelineJob[] = createdIds.map((id, i) => ({
@@ -90,40 +104,53 @@ export function usePipeline() {
       }));
       setJobs(initial);
 
-      // Subscribe to realtime updates for all jobs in this pipeline
+      // Subscribe to realtime updates for every job in this pipeline.
+      // Postgres-changes filters only support a single column comparison,
+      // so we register two listeners: one for the root row (id=eq.rootId)
+      // and one for its children (parent_id=eq.rootId).
+      const applyUpdate = (payload: { new: Record<string, unknown> }) => {
+        const updated = payload.new;
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === updated.id
+              ? {
+                  ...j,
+                  status: updated.status as JobStatus,
+                  stats: (updated.stats as Record<string, number>) ?? {},
+                  error_message: (updated.error_message as string) ?? null,
+                }
+              : j
+          )
+        );
+      };
+
       const channel = supabase
-        .channel(`pipeline-${dagId}`)
+        .channel(`pipeline-${rootId}`)
         .on(
           "postgres_changes",
           {
             event: "UPDATE",
             schema: "jobs",
             table: "job_logs",
-            filter: `dag_id=eq.${dagId}`,
+            filter: `id=eq.${rootId}`,
           },
-          (payload) => {
-            const updated = payload.new as Record<string, unknown>;
-            setJobs((prev) =>
-              prev.map((j) =>
-                j.id === updated.id
-                  ? {
-                      ...j,
-                      status: updated.status as JobStatus,
-                      stats:
-                        (updated.stats as Record<string, number>) ?? {},
-                      error_message:
-                        (updated.error_message as string) ?? null,
-                    }
-                  : j
-              )
-            );
-          }
+          applyUpdate
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "jobs",
+            table: "job_logs",
+            filter: `parent_id=eq.${rootId}`,
+          },
+          applyUpdate
         )
         .subscribe();
 
       channelRef.current = channel;
 
-      return { dagId, jobIds: createdIds };
+      return { rootId: rootId!, jobIds: createdIds };
     },
     [supabase, cleanup]
   );
