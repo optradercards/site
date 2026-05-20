@@ -253,7 +253,7 @@ export default function CardImportPage() {
           const chunk = productIds.slice(i, i + EXISTS_CHUNK);
           const { data, error } = await supabase
             .schema("cards")
-            .from("products")
+            .from("product_sources")
             .select("source_id")
             .eq("source_provider", "shiny")
             .in("source_id", chunk);

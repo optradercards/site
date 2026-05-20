@@ -14,7 +14,7 @@ type SignupFormData = {
   lastName: string;
   profileName: string;
   profileSlug: string;
-  plan: "collector" | "dealer" | "dealer_plus";
+  plan: "collector" | "trader" | "trader_plus";
 };
 
 export default function SignupClientWithPlans() {
@@ -24,7 +24,7 @@ export default function SignupClientWithPlans() {
   const { user } = useUser();
   const [step, setStep] = useState<"plan" | "signup">("plan");
   const [selectedPlan, setSelectedPlan] = useState<
-    "collector" | "dealer" | "dealer_plus"
+    "collector" | "trader" | "trader_plus"
   >("collector");
   const {
     register,
@@ -46,7 +46,7 @@ export default function SignupClientWithPlans() {
 
   useEffect(() => {
     const planParam = searchParams.get("plan");
-    if (planParam === "dealer" || planParam === "dealer_plus") {
+    if (planParam === "trader" || planParam === "trader_plus") {
       setSelectedPlan(planParam);
     }
     const emailParam = searchParams.get("email");
@@ -61,7 +61,7 @@ export default function SignupClientWithPlans() {
   };
 
   const handlePlanSelection = (
-    plan: "collector" | "dealer" | "dealer_plus"
+    plan: "collector" | "trader" | "trader_plus"
   ) => {
     setSelectedPlan(plan);
     setValue("plan", plan);
@@ -89,7 +89,7 @@ export default function SignupClientWithPlans() {
             profile_name: data.profileName.trim(),
             profile_slug: data.profileSlug.trim().toLowerCase(),
             // Plan selection is saved but not used during account creation
-            // Dealer accounts can be created later through the dashboard
+            // Trader accounts can be created later through the dashboard
             selected_plan: data.plan,
           },
         },
@@ -125,8 +125,8 @@ export default function SignupClientWithPlans() {
       features: ["Personal collection", "Buy and sell", "Community access"],
     },
     {
-      id: "dealer",
-      name: "Dealer",
+      id: "trader",
+      name: "Trader",
       price: "$49/mo",
       description: "For growing businesses",
       features: [
@@ -136,8 +136,8 @@ export default function SignupClientWithPlans() {
       ],
     },
     {
-      id: "dealer_plus",
-      name: "Dealer++",
+      id: "trader_plus",
+      name: "Trader++",
       price: "Custom",
       description: "With retail locations",
       features: ["POS system", "Multi-store", "Hardware support"],

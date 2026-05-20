@@ -15,11 +15,13 @@ interface NavItem {
 const adminNavItems: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: "📊" },
   { href: "/admin/jobs", label: "Jobs", icon: "⚡" },
+  { href: "/admin/crons", label: "Crons", icon: "⏰" },
   {
     label: "General",
     icon: "👥",
     children: [
       { href: "/admin/admins", label: "Admins", icon: "👤" },
+      { href: "/admin/users", label: "Users", icon: "👥" },
       { href: "/admin/traders", label: "Traders", icon: "🤝" },
       { href: "/admin/settings", label: "Settings", icon: "⚙️" },
     ],
@@ -47,7 +49,6 @@ const adminNavItems: NavItem[] = [
       { href: "/admin/catalog", label: "Catalog", icon: "👁️" },
       { href: "/admin/products", label: "Products", icon: "🃏" },
       { href: "/admin/market", label: "Market", icon: "💰" },
-      { href: "/admin/collections", label: "Collections", icon: "📦" },
     ],
   },
   {
@@ -60,6 +61,7 @@ const adminNavItems: NavItem[] = [
       { href: "/admin/external/import-products", label: "Import Products", icon: "💾" },
       { href: "/admin/external/import-collections", label: "Import Collections", icon: "📦" },
       { href: "/admin/external/import-accounts", label: "Import Accounts", icon: "👤" },
+      { href: "/admin/external/search-collectr", label: "Search Collectr", icon: "🔍" },
     ],
   },
   {

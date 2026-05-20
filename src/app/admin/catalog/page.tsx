@@ -8,6 +8,7 @@ interface Brand {
   name: string;
   icon_url?: string;
   icon_dark_url?: string;
+  is_hidden: boolean;
 }
 
 interface SetList {
@@ -259,13 +260,18 @@ export default function CatalogPage() {
                         setExpandedSetLists(new Set());
                         setExpandedGroups(new Set());
                       }}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between gap-2 ${
                         selectedBrand === brand.id
                           ? "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 font-medium"
                           : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                      }`}
+                      } ${brand.is_hidden ? "opacity-60" : ""}`}
                     >
-                      {brand.name}
+                      <span className="truncate">{brand.name}</span>
+                      {brand.is_hidden && (
+                        <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300">
+                          hidden
+                        </span>
+                      )}
                     </button>
                   ))
                 )}
@@ -287,10 +293,17 @@ export default function CatalogPage() {
                         className="w-16 h-16 object-contain rounded-lg bg-gray-50 dark:bg-gray-700 p-2"
                       />
                     )}
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                        {selectedBrandData.name}
-                      </h3>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3">
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                          {selectedBrandData.name}
+                        </h3>
+                        {selectedBrandData.is_hidden && (
+                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                            Hidden from storefront
+                          </span>
+                        )}
+                      </div>
                       <div className="flex gap-4 text-sm mt-1">
                         <span className="text-gray-500 dark:text-gray-400">
                           {brandSetLists.length} set lists
@@ -303,6 +316,43 @@ export default function CatalogPage() {
                         </span>
                       </div>
                     </div>
+                    <button
+                      onClick={async () => {
+                        const target = !selectedBrandData.is_hidden;
+                        // Optimistic update so the UI flips instantly;
+                        // revert on error.
+                        setBrands((prev) =>
+                          prev.map((b) =>
+                            b.id === selectedBrandData.id
+                              ? { ...b, is_hidden: target }
+                              : b
+                          )
+                        );
+                        const { error } = await supabase
+                          .schema("cards")
+                          .rpc("set_brand_hidden", {
+                            p_brand_id: selectedBrandData.id,
+                            p_hidden: target,
+                          });
+                        if (error) {
+                          setBrands((prev) =>
+                            prev.map((b) =>
+                              b.id === selectedBrandData.id
+                                ? { ...b, is_hidden: !target }
+                                : b
+                            )
+                          );
+                          alert(`Failed: ${error.message}`);
+                        }
+                      }}
+                      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+                        selectedBrandData.is_hidden
+                          ? "bg-red-500 hover:bg-red-600 text-white"
+                          : "bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200"
+                      }`}
+                    >
+                      {selectedBrandData.is_hidden ? "Unhide" : "Hide brand"}
+                    </button>
                   </div>
                 </div>
 

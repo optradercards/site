@@ -299,7 +299,7 @@ export default async function ListingDetailPage({
             {/* 4. Buy / Add to Cart buttons */}
             <div className="mt-5">
               <ListingActions
-                productId={item.id}
+                listingId={item.id}
                 disabled={item.quantity <= 0 || item.price_cents == null}
                 stock={item.quantity}
                 itemTitle={item.title}

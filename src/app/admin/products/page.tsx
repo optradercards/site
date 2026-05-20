@@ -77,7 +77,8 @@ export default function ProductsPage() {
       .order("name");
 
     if (search.trim()) {
-      query = query.ilike("name", `%${search.trim()}%`);
+      const term = search.trim();
+      query = query.or(`name.ilike.%${term}%,card_number.ilike.%${term}%`);
     }
 
     const { data, error } = await query;

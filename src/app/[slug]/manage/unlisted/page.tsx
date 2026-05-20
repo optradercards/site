@@ -13,12 +13,15 @@ import {
   previewMarketPrice,
   type MarketData,
 } from "@/lib/pricing";
+import ProductLink from "@/components/ProductLink";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 type CollectionItem = {
+  // Renamed from instance_id (cards.user_collection_summary) to lot_id under
+  // the redesigned inventory model. Kept the alias to minimize diff churn.
   instance_id: string;
   product_id: string;
   quantity: number;
@@ -32,14 +35,18 @@ type CollectionItem = {
   grade: string | null;
   purchase_price_cents: number | null;
   purchase_price_currency: string | null;
-  current_value_cents: number | null;
-  is_wishlist: boolean;
-  collection_name: string | null;
+  consignor_acceptance:
+    | "not_applicable"
+    | "pending"
+    | "accepted"
+    | "disputed"
+    | "rejected"
+    | null;
 };
 
-type EcomProduct = {
+type EcomListing = {
   id: string;
-  card_product_id: string;
+  card_product_id: string | null;
   grading_service: string | null;
   grade: string | null;
 };
@@ -166,15 +173,33 @@ export default function UnlistedPage() {
     if (!activeAccountId) return;
     setLoading(true);
 
-    const { data: collData } = await supabase
-      .schema("cards")
-      .from("user_collection_summary")
-      .select("*")
+    const { data: invData } = await supabase
+      .schema("ecom")
+      .from("vendor_inventory_summary")
+      .select(
+        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance"
+      )
       .eq("account_id", activeAccountId)
-      .eq("is_wishlist", false)
+      .gt("quantity_remaining", 0)
+      .not("card_product_id", "is", null)
       .order("product_name");
 
-    const collection = (collData ?? []) as CollectionItem[];
+    const collection: CollectionItem[] = (invData ?? []).map((r: any) => ({
+      instance_id: r.lot_id,
+      product_id: r.card_product_id,
+      quantity: r.quantity_remaining,
+      product_name: r.product_name,
+      image_url: r.image_url,
+      card_number: r.card_number,
+      rarity: r.rarity,
+      set_name: r.set_name,
+      brand_name: r.brand_name,
+      grading_service: r.grading_service,
+      grade: r.grade,
+      purchase_price_cents: r.acquisition_cost_cents,
+      purchase_price_currency: r.acquisition_currency,
+      consignor_acceptance: r.consignor_acceptance ?? null,
+    }));
     setItems(collection);
 
     if (collection.length === 0) {
@@ -194,9 +219,10 @@ export default function UnlistedPage() {
         .in("product_id", productIds),
       supabase
         .schema("ecom")
-        .from("products")
-        .select("card_product_id, grading_service, grade")
-        .eq("account_id", activeAccountId),
+        .from("listings")
+        .select("id, card_product_id, grading_service, grade")
+        .eq("account_id", activeAccountId)
+        .neq("status", "archived"),
     ]);
 
     const mMap: Record<string, MarketData> = {};
@@ -206,7 +232,7 @@ export default function UnlistedPage() {
     setMarketMap(mMap);
 
     const keys = new Set<string>();
-    for (const l of (listingsRes.data ?? []) as EcomProduct[]) {
+    for (const l of (listingsRes.data ?? []) as EcomListing[]) {
       keys.add(
         `${l.card_product_id}|${l.grading_service ?? ""}|${l.grade ?? ""}`
       );
@@ -396,6 +422,12 @@ export default function UnlistedPage() {
     selectedItems.has(r.item.instance_id)
   ).length;
 
+  const pendingSelectedCount = rows.filter(
+    (r) =>
+      selectedItems.has(r.item.instance_id) &&
+      r.item.consignor_acceptance === "pending",
+  ).length;
+
   // -------------------------------------------------------------------------
   // Per-item edit
   // -------------------------------------------------------------------------
@@ -450,7 +482,7 @@ export default function UnlistedPage() {
 
       const { error } = await supabase
         .schema("ecom")
-        .from("products")
+        .from("listings")
         .insert(row);
 
       if (error) {
@@ -509,6 +541,15 @@ export default function UnlistedPage() {
           }
         />
       </div>
+
+      {/* Pending consignor confirmation warning */}
+      {pendingSelectedCount > 0 && (
+        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-300 text-sm">
+          {pendingSelectedCount} of {selectedCount} selected lot
+          {selectedCount === 1 ? "" : "s"} {pendingSelectedCount === 1 ? "is" : "are"}{" "}
+          awaiting consignor confirmation — list at your own risk.
+        </div>
+      )}
 
       {/* Selection Bar */}
       {selectedCount > 0 && (
@@ -803,7 +844,9 @@ export default function UnlistedPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      {r.item.product_name}
+                      <ProductLink cardProductId={r.item.product_id} showIcon>
+                        {r.item.product_name}
+                      </ProductLink>
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {r.item.set_name}

@@ -13,7 +13,7 @@ import { useUser } from "@/contexts/UserContext";
 
 export default function MembersSettingsPage() {
   const { user } = useUser();
-  const { activeAccountId, isDealer } = useAccounts();
+  const { activeAccountId, isTrader } = useAccounts();
   const { data: members = [], isLoading: membersLoading } =
     useAccountMembers(activeAccountId);
   const { data: invitations = [], isLoading: invitationsLoading } =
@@ -29,15 +29,15 @@ export default function MembersSettingsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [emailNotice, setEmailNotice] = useState<string | null>(null);
 
-  if (!isDealer) {
+  if (!isTrader) {
     return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
         <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">
           Team Members
         </h2>
         <p className="text-gray-600 dark:text-gray-400 mb-4">
-          Member management is available for Dealer accounts. Switch to your
-          dealer account or create a dealer account to access this feature.
+          Member management is available for Trader accounts. Switch to your
+          trader account or create a trader account to access this feature.
         </p>
       </div>
     );

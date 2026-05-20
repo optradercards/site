@@ -72,7 +72,7 @@ export default function BecomeATraderPage() {
                 Most Popular
               </div>
               <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
-                Dealer
+                Trader
               </h3>
               <p className="text-2xl font-bold text-red-600 dark:text-red-400 mb-1">
                 $49
@@ -91,7 +91,7 @@ export default function BecomeATraderPage() {
                 <li>✓ Priority support</li>
               </ul>
               <a
-                href="/become-a-trader/features?plan=dealer"
+                href="/become-a-trader/features?plan=trader"
                 className="w-full block text-center py-2 px-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded transition-colors"
               >
                 Learn More
@@ -100,7 +100,7 @@ export default function BecomeATraderPage() {
 
             <div className="bg-purple-50 dark:bg-purple-950 p-6 rounded-lg border border-purple-200 dark:border-purple-800">
               <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">
-                Dealer++
+                Trader++
               </h3>
               <p className="text-2xl font-bold text-purple-600 dark:text-purple-400 mb-1">
                 $49+
@@ -112,7 +112,7 @@ export default function BecomeATraderPage() {
                 For businesses with retail locations
               </p>
               <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300 mb-6">
-                <li>✓ Everything in Dealer</li>
+                <li>✓ Everything in Trader</li>
                 <li>✓ Point of Sale (POS) system</li>
                 <li>✓ Multi-location management</li>
                 <li>✓ Hardware support</li>

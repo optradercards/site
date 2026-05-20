@@ -61,6 +61,7 @@ export default async function Home() {
       .from("brands")
       .select("id, name, icon_url, icon_dark_url")
       .eq("is_available", true)
+      .eq("is_hidden", false)
       .order("name"),
     supabase
       .schema("ecom")

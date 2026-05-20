@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -99,6 +99,7 @@ function JsonBlock({ value }: { value: unknown }) {
 
 export default function JobDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const jobId = String(params.id);
   const supabase = createClient();
 
@@ -112,6 +113,7 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   const loadEvents = useCallback(async () => {
@@ -303,6 +305,28 @@ export default function JobDetailPage() {
     }
   };
 
+  const deleteTree = async () => {
+    if (!job) return;
+    const childCount = children.length;
+    const message = childCount > 0
+      ? `Delete this job and ${childCount} direct child${childCount === 1 ? "" : "ren"} (plus everything they spawned and all events)? This cannot be undone.`
+      : "Delete this job and all of its events? This cannot be undone.";
+    if (!window.confirm(message)) return;
+    setDeleting(true);
+    try {
+      const { data, error } = await supabase
+        .schema("jobs")
+        .rpc("admin_delete_tree", { p_job_id: jobId });
+      if (error) throw error;
+      toast.success(`Deleted ${data ?? 1} job${data === 1 ? "" : "s"}`);
+      const parentId = job.parent_id;
+      router.replace(parentId ? `/admin/jobs/${parentId}` : "/admin/jobs");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return <p className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading…</p>;
   }
@@ -356,6 +380,13 @@ export default function JobDetailPage() {
               {retrying ? "Retrying…" : "Retry"}
             </button>
           )}
+          <button
+            onClick={deleteTree}
+            disabled={deleting}
+            className="px-3 py-1 text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
+import ProductLink from "@/components/ProductLink";
 
 // ---------------------------------------------------------------------------
 // Store Page — shows ecom.listings (active listings)
@@ -172,7 +173,7 @@ export default function ListingsPage() {
 
     await supabase
       .schema("ecom")
-      .from("products")
+      .from("listings")
       .update({
         pricing_mode: "fixed",
         fixed_price_cents: cents,
@@ -292,7 +293,9 @@ export default function ListingsPage() {
                     </td>
                     {/* Card */}
                     <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      {r.listing.card_name ?? "\u2014"}
+                      <ProductLink cardProductId={r.listing.card_product_id} showIcon>
+                        {r.listing.card_name ?? "\u2014"}
+                      </ProductLink>
                     </td>
                     {/* Set */}
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">

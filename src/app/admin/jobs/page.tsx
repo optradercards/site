@@ -331,18 +331,17 @@ export default function AdminJobsPage() {
         (job.error_message.includes("child job(s) failed") ||
           (job.stats as Record<string, unknown> | null)?.failed_children)
       ) {
-        const { data: failedChildren } = await supabase
+        // Walk the full subtree — the rollup bubbles amber state up
+        // multiple levels, so a failed leaf can be several hops below.
+        const { data: failedDescendants } = await supabase
           .schema("jobs")
-          .from("job_logs")
-          .select("id")
-          .eq("parent_id", jobId)
-          .eq("status", "failed");
-        const childIds = (failedChildren ?? []).map((r: { id: string }) => r.id);
-        if (childIds.length === 0) {
-          toast.info("No failed children to retry");
+          .rpc("failed_descendants", { p_root_ids: [jobId] });
+        const ids = (failedDescendants ?? []).map((r: { id: string }) => r.id);
+        if (ids.length === 0) {
+          toast.info("No failed descendants to retry");
         } else {
-          const triggered = await resetAndInvoke(childIds);
-          toast.info(`Retried ${triggered} failed child job(s)`);
+          const triggered = await resetAndInvoke(ids);
+          toast.info(`Retried ${triggered} failed job(s)`);
         }
         return;
       }
@@ -402,16 +401,14 @@ export default function AdminJobsPage() {
 
     const idsToInvoke = directFailures.map((j) => j.id);
 
-    // Pull failed children for the amber parents in one query so we
-    // can roll them into the same reset+invoke pass.
+    // Walk every amber root's subtree in one round-trip; the recursive
+    // rollup means failed leaves can be several hops deeper than direct
+    // children.
     if (parentsWithFailedChildren.length > 0) {
       const parentIds = parentsWithFailedChildren.map((p) => p.id);
       const { data: failedKids } = await supabase
         .schema("jobs")
-        .from("job_logs")
-        .select("id")
-        .in("parent_id", parentIds)
-        .eq("status", "failed");
+        .rpc("failed_descendants", { p_root_ids: parentIds });
       for (const r of (failedKids ?? []) as Array<{ id: string }>) {
         idsToInvoke.push(r.id);
       }
@@ -438,12 +435,13 @@ export default function AdminJobsPage() {
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
-    // Fetch the N most-recent pipeline groups with their full subtrees,
-    // not just N rows. See jobs.recent_jobs() — a row-based limit
-    // mangles pipelines whose parent is older than the window.
     const { data } = await supabase
       .schema("jobs")
-      .rpc("recent_jobs", { p_group_limit: 25 });
+      .from("job_logs")
+      .select("*")
+      .is("parent_id", null)
+      .order("created_at", { ascending: false })
+      .limit(25);
     setLogs((data ?? []) as ImportLog[]);
     setLoading(false);
   }, [supabase]);
@@ -471,13 +469,10 @@ export default function AdminJobsPage() {
         { event: "INSERT", schema: "jobs", table: "job_logs", filter },
         (payload) => {
           const newLog = payload.new as ImportLog;
+          if (newLog.parent_id != null) return;
           setLogs((prev) => [newLog, ...prev]);
-          // Toast only for new top-level jobs; child inserts are
-          // visible via the row's rollup count without spamming.
-          if (newLog.parent_id == null) {
-            const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
-            toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
-          }
+          const label = PLATFORM_LABELS[newLog.platform] ?? newLog.platform;
+          toast.info(`New job: ${label}${newLog.handle ? ` (${newLog.handle})` : ""}`);
         }
       )
       .on(

@@ -113,7 +113,7 @@ export default async function SearchPage({
 
   if (q) {
     query = query.or(
-      `title.ilike.%${q}%,card_name.ilike.%${q}%,set_name.ilike.%${q}%,seller_name.ilike.%${q}%`
+      `title.ilike.%${q}%,card_name.ilike.%${q}%,card_number.ilike.%${q}%,set_name.ilike.%${q}%,seller_name.ilike.%${q}%`
     );
   }
   if (brands_filter.length > 0) {

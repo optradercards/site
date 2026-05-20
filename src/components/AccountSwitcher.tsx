@@ -3,14 +3,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAccounts } from "@/contexts/AccountContext";
-import CreateDealerModal from "@/components/CreateDealerModal";
+import CreateTraderModal from "@/components/CreateTraderModal";
 
 export default function AccountSwitcher() {
-  const { activeAccount, accounts, switchAccount, personalAccount, isDealer } =
+  const { activeAccount, accounts, switchAccount, personalAccount, isTrader } =
     useAccounts();
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [showDealerModal, setShowDealerModal] = useState(false);
+  const [showTraderModal, setShowTraderModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function AccountSwitcher() {
   const teamAccounts = accounts.filter((a) => !a.personal_account);
   const displayName = activeAccount.personal_account
     ? "My Collection"
-    : activeAccount.name || activeAccount.slug || "Dealer Account";
+    : activeAccount.name || activeAccount.slug || "Trader Account";
 
   const handleSwitch = (account: typeof activeAccount) => {
     if (!account) return;
@@ -114,12 +114,12 @@ export default function AccountSwitcher() {
             </button>
           )}
 
-          {/* Dealer accounts */}
+          {/* Trader accounts */}
           {teamAccounts.length > 0 && (
             <>
               <div className="px-3 py-2 border-t border-b border-gray-200 dark:border-gray-700">
                 <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Dealer Accounts
+                  Trader Accounts
                 </p>
               </div>
 
@@ -164,27 +164,27 @@ export default function AccountSwitcher() {
             </>
           )}
 
-          {/* Create Dealer Account */}
-          {!isDealer && (
+          {/* Create Trader Account */}
+          {!isTrader && (
             <button
               onClick={() => {
                 setIsOpen(false);
-                setShowDealerModal(true);
+                setShowTraderModal(true);
               }}
               className="w-full text-left px-3 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors flex items-center gap-3 border-t border-gray-200 dark:border-gray-700"
             >
               <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400 text-sm font-bold shrink-0">
                 +
               </div>
-              Create a Dealer Account
+              Create a Trader Account
             </button>
           )}
         </div>
       )}
 
-      <CreateDealerModal
-        isOpen={showDealerModal}
-        onClose={() => setShowDealerModal(false)}
+      <CreateTraderModal
+        isOpen={showTraderModal}
+        onClose={() => setShowTraderModal(false)}
       />
     </div>
   );

@@ -17,7 +17,7 @@ import CurrencySwitcher from "@/components/CurrencySwitcher";
 
 export default function SiteHeader() {
   const { user, isAdmin } = useUser();
-  const { activeAccount, accounts, personalAccount, isDealer, switchAccount } =
+  const { activeAccount, accounts, personalAccount, isTrader, switchAccount } =
     useAccounts();
   const router = useRouter();
   const supabase = createClient();
@@ -40,7 +40,7 @@ export default function SiteHeader() {
     ? `/${activeAccount.slug}/manage`
     : "/";
   const manageHref =
-    isDealer && activeAccount?.slug
+    isTrader && activeAccount?.slug
       ? `/${activeAccount.slug}/manage`
       : null;
   const teamAccounts = accounts.filter((a) => !a.personal_account);
@@ -306,7 +306,7 @@ export default function SiteHeader() {
                         {cartItems.slice(0, 5).map((item) => (
                           <div key={item.id} className="flex gap-3 p-3 border-b border-gray-100 dark:border-gray-700 last:border-0">
                             <Link
-                              href={`/listing/${item.product_id}`}
+                              href={`/listing/${item.listing_id}`}
                               onClick={() => setIsCartOpen(false)}
                               className="shrink-0"
                             >
@@ -324,7 +324,7 @@ export default function SiteHeader() {
                             </Link>
                             <div className="flex-1 min-w-0">
                               <Link
-                                href={`/listing/${item.product_id}`}
+                                href={`/listing/${item.listing_id}`}
                                 onClick={() => setIsCartOpen(false)}
                                 className="text-xs font-medium text-gray-800 dark:text-gray-200 hover:text-red-500 transition-colors line-clamp-1"
                               >

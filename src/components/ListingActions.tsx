@@ -16,7 +16,7 @@ type CrossSellItem = {
 };
 
 export default function ListingActions({
-  productId,
+  listingId,
   disabled,
   stock,
   itemTitle,
@@ -25,7 +25,7 @@ export default function ListingActions({
   crossSellItems,
   rates,
 }: {
-  productId: string;
+  listingId: string;
   disabled?: boolean;
   stock: number;
   itemTitle: string;
@@ -48,7 +48,7 @@ export default function ListingActions({
       return;
     }
     addToCart.mutate(
-      { productId, quantity },
+      { listingId, quantity },
       { onSuccess: () => setShowModal(true) },
     );
   };

@@ -19,7 +19,6 @@ import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import ProductBadges from "@/components/ProductBadges";
 import type {
   CardWithDetails,
-  RecentPurchase,
   PriceHistoryEntry,
 } from "@/types/cardDetail";
 
@@ -34,16 +33,6 @@ const CHART_COLORS = [
   "#f97316", // orange
 ];
 
-function formatTimestamp(ts: number): string {
-  return new Date(ts * 1000).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export default function CardDetailPage() {
   const params = useParams();
   const cardId = params?.id as string;
@@ -54,7 +43,6 @@ export default function CardDetailPage() {
   const rates = exchangeRates ?? {};
 
   const [card, setCard] = useState<CardWithDetails | null>(null);
-  const [purchases, setPurchases] = useState<RecentPurchase[]>([]);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -66,20 +54,13 @@ export default function CardDetailPage() {
       setLoading(true);
       setError(null);
 
-      const [cardResult, purchasesResult, historyResult] = await Promise.all([
+      const [cardResult, historyResult] = await Promise.all([
         supabase
           .schema("cards")
           .from("products_with_details")
           .select("*")
           .eq("id", cardId)
           .single(),
-        supabase
-          .schema("cards")
-          .from("recent_purchases")
-          .select("*")
-          .eq("product_id", cardId)
-          .order("activity_timestamp", { ascending: false })
-          .limit(20),
         supabase
           .schema("cards")
           .from("price_history")
@@ -96,7 +77,6 @@ export default function CardDetailPage() {
       }
 
       setCard(cardResult.data as CardWithDetails);
-      setPurchases((purchasesResult.data ?? []) as RecentPurchase[]);
       setPriceHistory((historyResult.data ?? []) as PriceHistoryEntry[]);
       setLoading(false);
     }
@@ -171,22 +151,37 @@ export default function CardDetailPage() {
   const unitChangeSign =
     card.unit_change_cents != null && card.unit_change_cents >= 0 ? "+" : "";
 
-  const gradeRows: { label: string; value: number | null }[] = [
-    { label: "Ungraded", value: card.price_ungraded },
-    { label: "PSA 1", value: card.price_psa_1 },
-    { label: "PSA 2", value: card.price_psa_2 },
-    { label: "PSA 3", value: card.price_psa_3 },
-    { label: "PSA 4", value: card.price_psa_4 },
-    { label: "PSA 5", value: card.price_psa_5 },
-    { label: "PSA 6", value: card.price_psa_6 },
-    { label: "PSA 7", value: card.price_psa_7 },
-    { label: "PSA 8", value: card.price_psa_8 },
-    { label: "PSA 9", value: card.price_psa_9 },
+  const ebaySoldUrl = (() => {
+    const parts = [
+      card.set_name,
+      card.name,
+      card.card_number ? `#${card.card_number}` : null,
+    ].filter(Boolean);
+    const query = encodeURIComponent(parts.join(" "));
+    return `https://www.ebay.com/sch/i.html?_nkw=${query}&LH_Sold=1&LH_Complete=1`;
+  })();
+
+  const psaGrades: { label: string; value: number | null }[] = [
     { label: "PSA 10", value: card.price_psa_10 },
     { label: "PSA 9.5", value: card.price_psa_9_5 },
+    { label: "PSA 9", value: card.price_psa_9 },
+    { label: "PSA 8", value: card.price_psa_8 },
+    { label: "PSA 7", value: card.price_psa_7 },
+    { label: "PSA 6", value: card.price_psa_6 },
+    { label: "PSA 5", value: card.price_psa_5 },
+    { label: "PSA 4", value: card.price_psa_4 },
+    { label: "PSA 3", value: card.price_psa_3 },
+    { label: "PSA 2", value: card.price_psa_2 },
+    { label: "PSA 1", value: card.price_psa_1 },
+  ].filter((g) => g.value != null);
+
+  const otherGrades: { label: string; value: number | null }[] = [
     { label: "BGS", value: card.price_bgs },
     { label: "CGC", value: card.price_cgc },
-  ];
+  ].filter((g) => g.value != null);
+
+  const hasMarketPrices =
+    card.price_ungraded != null || psaGrades.length > 0 || otherGrades.length > 0;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -332,70 +327,132 @@ export default function CardDetailPage() {
             Market Prices
           </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                <th className="px-6 py-3">Condition</th>
-                <th className="px-6 py-3">Price</th>
-              </tr>
-            </thead>
-            <tbody className="text-gray-700 dark:text-gray-300">
-              {gradeRows.map((row) => (
-                <tr
-                  key={row.label}
-                  className="border-b border-gray-100 dark:border-gray-700/50"
-                >
-                  <td className="px-6 py-2 font-medium">{row.label}</td>
-                  <td className="px-6 py-2">{formatPrice(row.value, currency, rates)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {!hasMarketPrices ? (
+          <p className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
+            No market prices available.
+          </p>
+        ) : (
+          <div className="px-6 py-6 space-y-6">
+            {/* Ungraded — featured */}
+            {card.price_ungraded != null && (
+              <div className="flex items-center justify-between rounded-lg bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-700/50 dark:to-gray-800 border border-gray-200 dark:border-gray-700 px-5 py-4">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    Raw
+                  </p>
+                  <p className="text-base font-semibold text-gray-900 dark:text-white mt-0.5">
+                    Ungraded
+                  </p>
+                </div>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {formatPrice(card.price_ungraded, currency, rates)}
+                </p>
+              </div>
+            )}
+
+            {/* PSA grades */}
+            {psaGrades.length > 0 && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                  PSA
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {psaGrades.map((g) => {
+                    const isTop = g.label === "PSA 10";
+                    return (
+                      <div
+                        key={g.label}
+                        className={
+                          isTop
+                            ? "rounded-lg border border-amber-300 dark:border-amber-600/60 bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/10 px-4 py-3"
+                            : "rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 px-4 py-3"
+                        }
+                      >
+                        <p
+                          className={
+                            isTop
+                              ? "text-xs font-semibold text-amber-700 dark:text-amber-400"
+                              : "text-xs font-semibold text-gray-500 dark:text-gray-400"
+                          }
+                        >
+                          {g.label}
+                        </p>
+                        <p
+                          className={
+                            isTop
+                              ? "text-lg font-bold text-gray-900 dark:text-white mt-1"
+                              : "text-lg font-semibold text-gray-900 dark:text-white mt-1"
+                          }
+                        >
+                          {formatPrice(g.value, currency, rates)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Other graders */}
+            {otherGrades.length > 0 && (
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+                  Other Graders
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {otherGrades.map((g) => (
+                    <div
+                      key={g.label}
+                      className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 px-4 py-3"
+                    >
+                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                        {g.label}
+                      </p>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                        {formatPrice(g.value, currency, rates)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Recent Purchases */}
+      {/* eBay Last Sold */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            Recent Purchases
+            eBay Last Sold
           </h2>
         </div>
-        {purchases.length === 0 ? (
-          <p className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
-            No recent purchases recorded.
+        <div className="px-6 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            See recently completed sales for this card on eBay.
           </p>
-        ) : (
-          <ul className="divide-y divide-gray-100 dark:divide-gray-700/50">
-            {purchases.map((p) => (
-              <li key={p.id} className="px-6 py-3 flex items-center gap-3">
-                {p.avatar_url ? (
-                  <img
-                    src={p.avatar_url}
-                    alt=""
-                    className="w-8 h-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    {p.display_name || p.handle || "Unknown"}
-                  </p>
-                  {p.handle && p.display_name && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                      @{p.handle}
-                    </p>
-                  )}
-                </div>
-                <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
-                  {formatTimestamp(p.activity_timestamp)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+          <a
+            href={ebaySoldUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+          >
+            View Sold on eBay
+            <svg
+              className="ml-2 w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+          </a>
+        </div>
       </div>
 
       {/* Price History */}

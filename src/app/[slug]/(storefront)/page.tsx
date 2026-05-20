@@ -128,7 +128,7 @@ export default async function StorefrontPage({
 
   if (q) {
     query = query.or(
-      `title.ilike.%${q}%,card_name.ilike.%${q}%,set_name.ilike.%${q}%`
+      `title.ilike.%${q}%,card_name.ilike.%${q}%,card_number.ilike.%${q}%,set_name.ilike.%${q}%`
     );
   }
   if (brandsFilter.length > 0) query = query.in("brand_name", brandsFilter);

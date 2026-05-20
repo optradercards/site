@@ -1,4 +1,4 @@
-export type TraderPlanType = "collector" | "dealer" | "dealer_plus";
+export type TraderPlanType = "collector" | "trader" | "trader_plus";
 
 export interface TraderPlan {
   account_id: string;
@@ -33,8 +33,8 @@ export const PLAN_DETAILS = {
       "Standard support",
     ],
   },
-  dealer: {
-    name: "Dealer",
+  trader: {
+    name: "Trader",
     price: 4900, // $49 in cents
     description: "For businesses ready to scale their trading operation",
     features: [
@@ -48,12 +48,12 @@ export const PLAN_DETAILS = {
       "Dedicated account manager",
     ],
   },
-  dealer_plus: {
-    name: "Dealer++",
+  trader_plus: {
+    name: "Trader++",
     price: 4900, // $49 + store fees
     description: "For businesses with physical retail locations",
     features: [
-      "Everything in Dealer",
+      "Everything in Trader",
       "Point of Sale (POS) system",
       "Multi-location management",
       "Inventory sync across stores",

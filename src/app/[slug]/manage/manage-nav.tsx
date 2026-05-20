@@ -72,20 +72,32 @@ function NavSection({ item, slug }: { item: NavItem; slug: string }) {
   );
 }
 
-function buildNavItems(isDealer: boolean): NavItem[] {
+function buildNavItems(isTrader: boolean): NavItem[] {
   const items: NavItem[] = [
     { href: "/manage", label: "Overview", icon: "📊", exact: true },
   ];
 
-  if (isDealer) {
+  if (isTrader) {
     items.push({ href: "/manage/events", label: "Events", icon: "🎪" });
+    items.push({
+      label: "Inventory",
+      icon: "📦",
+      children: [
+        { href: "/manage/inventory/receive", label: "Receive", icon: "📥" },
+        { href: "/manage/inventory", label: "Inventory", icon: "📦", exact: true },
+        { href: "/manage/purchases", label: "Purchases", icon: "🧾" },
+        { href: "/manage/consignment-intakes", label: "Intakes", icon: "📝" },
+        { href: "/manage/contacts", label: "Contacts", icon: "📇" },
+        { href: "/manage/groups", label: "Groups", icon: "🗂️" },
+      ],
+    });
     items.push({
       label: "Store",
       icon: "🏪",
       children: [
+        { href: "/manage/unlisted", label: "List Items", icon: "🏷️" },
+        { href: "/manage/listings", label: "Listings", icon: "📋" },
         { href: "/manage/sell", label: "Sell", icon: "💰" },
-        { href: "/manage/listings", label: "Listings", icon: "🏪" },
-        { href: "/manage/unlisted", label: "Add Listings", icon: "🏷️" },
         { href: "/manage/labels", label: "Labels", icon: "🖨️" },
       ],
     });
@@ -93,10 +105,10 @@ function buildNavItems(isDealer: boolean): NavItem[] {
 
   const settingsChildren: NavItem[] = [
     { href: "/manage/accounts", label: "Accounts", icon: "🔗" },
-    { href: "/manage/plan", label: "Plan", icon: "📋" },
+    { href: "/manage/plan", label: "Plan", icon: "💳" },
     { href: "/manage/support", label: "Support", icon: "🎧" },
   ];
-  if (isDealer) {
+  if (isTrader) {
     settingsChildren.splice(1, 0, {
       href: "/manage/members",
       label: "Members",
@@ -119,13 +131,13 @@ export default function ManageNav({
 }) {
   const params = useParams();
   const slug = params?.slug as string;
-  const { activeAccount, isDealer } = useAccounts();
+  const { activeAccount, isTrader } = useAccounts();
 
   const accountLabel = activeAccount?.personal_account
     ? "My Collection"
     : activeAccount?.name || activeAccount?.slug || "Account";
 
-  const navItems = buildNavItems(isDealer);
+  const navItems = buildNavItems(isTrader);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">

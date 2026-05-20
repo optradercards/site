@@ -98,7 +98,7 @@ export default function CartPageClient() {
               className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 flex gap-4"
             >
               {/* Image */}
-              <Link href={`/listing/${item.product_id}`} className="shrink-0">
+              <Link href={`/listing/${item.listing_id}`} className="shrink-0">
                 <div className="w-20 h-28 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
                   {item.image_url ? (
                     <img
@@ -119,7 +119,7 @@ export default function CartPageClient() {
               {/* Details */}
               <div className="flex-1 min-w-0">
                 <Link
-                  href={`/listing/${item.product_id}`}
+                  href={`/listing/${item.listing_id}`}
                   className="font-semibold text-sm text-gray-900 dark:text-gray-100 hover:text-red-500 transition-colors line-clamp-2"
                 >
                   {item.title}

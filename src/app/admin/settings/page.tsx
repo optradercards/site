@@ -77,7 +77,7 @@ export default function AdminSettingsPage() {
             </label>
             <label className="flex items-center gap-3">
               <input type="checkbox" defaultChecked className="w-4 h-4 rounded" />
-              <span className="text-gray-700 dark:text-gray-300">Send dealer updates</span>
+              <span className="text-gray-700 dark:text-gray-300">Send trader updates</span>
             </label>
             <label className="flex items-center gap-3">
               <input type="checkbox" className="w-4 h-4 rounded" />

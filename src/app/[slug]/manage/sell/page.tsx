@@ -23,7 +23,7 @@ type PaymentMethod = "cash" | "payid_manual" | "bank_transfer";
 type DraftItem = {
   key: string;
   listing_id: string | null;
-  card_product_id: string;
+  card_product_id: string | null;
   card_name: string;
   image_url: string | null;
   grading_service: string | null;
@@ -91,7 +91,8 @@ export default function SellPage() {
         .gt("quantity", 0)
         .limit(30);
       if (invSearch.trim()) {
-        q = q.ilike("card_name", `%${invSearch.trim()}%`);
+        const term = invSearch.trim();
+        q = q.or(`card_name.ilike.%${term}%,card_number.ilike.%${term}%`);
       }
       const { data } = await q;
       if (!cancelled) {
@@ -126,7 +127,7 @@ export default function SellPage() {
         .select(
           "id, name, image_url, set_name, brand_name, card_number, rarity"
         )
-        .ilike("name", `%${catSearch.trim()}%`)
+        .or(`name.ilike.%${catSearch.trim()}%,card_number.ilike.%${catSearch.trim()}%`)
         .limit(30);
       if (!cancelled) {
         setCatResults((data ?? []) as CatalogProduct[]);
@@ -262,7 +263,7 @@ export default function SellPage() {
         .single();
       if (txErr) throw txErr;
 
-      // 2. Insert items with derived side
+      // 2. Insert items with derived side (capture ids so we can allocate lots)
       const rows = items.map((it) => ({
         transaction_id: tx.id,
         side: deriveSide(it.direction, totals.net_cents),
@@ -273,10 +274,11 @@ export default function SellPage() {
         quantity: it.quantity,
         unit_price_cents: it.unit_price_cents,
       }));
-      const { error: itErr } = await supabase
+      const { data: insertedItems, error: itErr } = await supabase
         .schema("ecom")
         .from("transaction_items")
-        .insert(rows);
+        .insert(rows)
+        .select("id");
       if (itErr) throw itErr;
 
       // 3. Payment (when net cash is owed to us)
@@ -296,17 +298,23 @@ export default function SellPage() {
         if (payErr) throw payErr;
       }
 
-      // 4. Decrement listing quantities for outbound items from stock
-      for (const it of items) {
+      // 4. Allocate outbound items against inventory lots (decrements
+      //    quantity_remaining, writes sale_allocations, snapshots market ref).
+      //    The insertedItems array is in the same order as `items`.
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
         if (it.direction !== "out") continue;
         if (!it.listing_id) continue;
-        const newQty = Math.max(0, it.max_available - it.quantity);
-        await supabase
+        const txItem = insertedItems?.[i];
+        if (!txItem) continue;
+        const { error: allocErr } = await supabase
           .schema("ecom")
-          .from("products")
-          .update({ quantity: newQty, status: newQty === 0 ? "sold" : "active" })
-          .eq("id", it.listing_id)
-          .eq("account_id", activeAccountId);
+          .rpc("fulfill_sale_from_lots", {
+            p_transaction_item_id: txItem.id,
+            p_listing_id: it.listing_id,
+            p_quantity: it.quantity,
+          });
+        if (allocErr) throw allocErr;
       }
 
       // 5. Mark transaction completed

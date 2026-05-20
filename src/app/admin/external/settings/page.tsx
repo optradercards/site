@@ -11,6 +11,7 @@ interface TokenStatus {
   updated_at?: string;
   local_id?: string | null;
   has_refresh_token?: boolean;
+  account_id?: string | null;
 }
 
 export default function ShinySettingsPage() {
@@ -260,6 +261,253 @@ export default function ShinySettingsPage() {
           using the stored <code className="font-mono">refreshToken</code> via
           the Firebase Secure Token Service before each call.
         </p>
+      </div>
+
+      <CollectrSection />
+    </div>
+  );
+}
+
+function CollectrSection() {
+  const supabase = createClient();
+  const [status, setStatus] = useState<TokenStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [minting, setMinting] = useState(false);
+  const [token, setToken] = useState("");
+  const [accountId, setAccountId] = useState("");
+  const [showToken, setShowToken] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.rpc(
+      "get_collectr_auth_token_preview",
+    );
+    if (error) {
+      toast.error(`Failed to load Collectr status: ${error.message}`);
+      setStatus(null);
+    } else {
+      setStatus(data as TokenStatus);
+    }
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleMint = async () => {
+    if (
+      status?.configured &&
+      !confirm(
+        "This will mint a fresh anonymous Collectr account and replace the current stored credentials. Continue?",
+      )
+    ) {
+      return;
+    }
+    setMinting(true);
+    const { data, error } = await supabase.functions.invoke(
+      "collectr-create-anonymous-user",
+      { body: {} },
+    );
+    if (error) {
+      toast.error(`Mint failed: ${error.message}`);
+    } else if (!data?.success) {
+      toast.error(`Mint failed: ${data?.error ?? "unknown error"}`);
+    } else {
+      toast.success(`Minted Collectr account ${data.account_id}`);
+      await load();
+    }
+    setMinting(false);
+  };
+
+  const handleSave = async () => {
+    const t = token.trim();
+    if (!t) {
+      toast.error("Token cannot be empty");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.rpc("set_collectr_credentials", {
+      p_token: t,
+      p_account_id: accountId.trim() || null,
+    });
+    if (error) {
+      toast.error(`Save failed: ${error.message}`);
+    } else {
+      toast.success("Collectr credentials saved");
+      setToken("");
+      setAccountId("");
+      setShowToken(false);
+      await load();
+    }
+    setSaving(false);
+  };
+
+  const handleClear = async () => {
+    if (
+      !confirm(
+        "Remove the Collectr auth token + account id? All Collectr edge functions will fail until you set a new one.",
+      )
+    ) {
+      return;
+    }
+    setClearing(true);
+    const { error } = await supabase.rpc("clear_collectr_auth_token");
+    if (error) {
+      toast.error(`Clear failed: ${error.message}`);
+    } else {
+      toast.success("Collectr credentials cleared");
+      await load();
+    }
+    setClearing(false);
+  };
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+          Collectr Settings
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          Auth token + account UUID used by collectr-fetch-cards,
+          collectr-sync-history, and collectr-reconcile.
+        </p>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          Current status
+        </h3>
+        {loading ? (
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+        ) : !status?.configured ? (
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            No Collectr token configured. Edge env vars will be used as a
+            fallback during the migration window — paste a token here to
+            switch over to Vault-managed storage.
+          </p>
+        ) : (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 dark:text-gray-400">Token:</span>
+              <code className="font-mono bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded">
+                {status.preview}
+              </code>
+              <span className="text-xs text-gray-400">
+                ({status.length} chars)
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 dark:text-gray-400">
+                Account id:
+              </span>
+              <code className="font-mono text-xs">
+                {status.account_id ?? "—"}
+              </code>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 dark:text-gray-400">
+                Updated:
+              </span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">
+                {status.updated_at
+                  ? new Date(status.updated_at).toLocaleString()
+                  : "—"}
+              </span>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={handleClear}
+                disabled={clearing}
+                className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded hover:bg-red-100 dark:hover:bg-red-900/40 disabled:opacity-50"
+              >
+                {clearing ? "Clearing…" : "Clear credentials"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 space-y-3">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Mint anonymous account
+        </h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Calls Collectr&apos;s public <code className="font-mono">POST /accounts</code>{" "}
+          endpoint to provision a fresh anonymous user, then stores the
+          returned token + account UUID into Vault. No manual capture
+          required. The minted token has no expiry per the published
+          spec.
+        </p>
+        <button
+          onClick={handleMint}
+          disabled={minting}
+          className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:bg-red-300 rounded-lg"
+        >
+          {minting ? "Minting…" : "Mint anonymous account"}
+        </button>
+      </div>
+
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          Update credentials
+        </h3>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Auth token
+          </label>
+          <div className="flex gap-2">
+            <input
+              type={showToken ? "text" : "password"}
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              placeholder="Paste Collectr authorization header value…"
+              className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs"
+            />
+            <button
+              type="button"
+              onClick={() => setShowToken((v) => !v)}
+              className="px-3 py-2 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded"
+            >
+              {showToken ? "Hide" : "Show"}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Captured from a Collectr API request&apos;s{" "}
+            <code className="font-mono">authorization</code> header. No
+            refresh flow yet — re-paste when expired.
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Account id (UUID)
+          </label>
+          <input
+            type="text"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            placeholder="e.g. 0f0c7b43-76b9-4f9c-a710-1975a940cc71"
+            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-xs"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Optional. Used as the <code className="font-mono">username</code>{" "}
+            query param on{" "}
+            <code className="font-mono">/catalog/products/&#123;id&#125;</code>{" "}
+            (token is scoped to this account). Leave blank to keep the
+            existing one.
+          </p>
+        </div>
+
+        <button
+          onClick={handleSave}
+          disabled={saving || !token.trim()}
+          className="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 disabled:bg-red-300 rounded-lg"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
       </div>
     </div>
   );

@@ -5,21 +5,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 
-interface CreateDealerModalProps {
+interface CreateTraderModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function CreateDealerModal({
+export default function CreateTraderModal({
   isOpen,
   onClose,
-}: CreateDealerModalProps) {
+}: CreateTraderModalProps) {
   const { switchAccount } = useAccounts();
   const queryClient = useQueryClient();
   const supabase = createClient();
 
-  const [dealerName, setDealerName] = useState("");
-  const [dealerSlug, setDealerSlug] = useState("");
+  const [traderName, setTraderName] = useState("");
+  const [traderSlug, setTraderSlug] = useState("");
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,15 +27,15 @@ export default function CreateDealerModal({
   // Reset form when modal opens
   useEffect(() => {
     if (isOpen) {
-      setDealerName("");
-      setDealerSlug("");
+      setTraderName("");
+      setTraderSlug("");
       setSlugManuallyEdited(false);
       setError(null);
     }
   }, [isOpen]);
 
   const handleSlugChange = (value: string) => {
-    setDealerSlug(
+    setTraderSlug(
       value
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, "-")
@@ -45,7 +45,7 @@ export default function CreateDealerModal({
   };
 
   const handleCreate = async () => {
-    if (!dealerName.trim() || !dealerSlug.trim()) {
+    if (!traderName.trim() || !traderSlug.trim()) {
       setError("Please fill in both fields.");
       return;
     }
@@ -55,10 +55,10 @@ export default function CreateDealerModal({
 
     try {
       const { data, error: rpcError } = await supabase.rpc(
-        "create_dealer_account",
+        "create_trader_account",
         {
-          dealer_name: dealerName.trim(),
-          dealer_slug: dealerSlug.trim(),
+          trader_name: traderName.trim(),
+          trader_slug: traderSlug.trim(),
         }
       );
 
@@ -76,7 +76,7 @@ export default function CreateDealerModal({
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to create dealer account. Please try again."
+          : "Failed to create trader account. Please try again."
       );
     } finally {
       setIsCreating(false);
@@ -98,7 +98,7 @@ export default function CreateDealerModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4">
           <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-            Create a Dealer Account
+            Create a Trader Account
           </h3>
           <button
             onClick={onClose}
@@ -124,9 +124,9 @@ export default function CreateDealerModal({
             </label>
             <input
               type="text"
-              value={dealerName}
+              value={traderName}
               onChange={(e) => {
-                setDealerName(e.target.value);
+                setTraderName(e.target.value);
                 if (!slugManuallyEdited) {
                   handleSlugChange(e.target.value);
                 }
@@ -146,7 +146,7 @@ export default function CreateDealerModal({
               </span>
               <input
                 type="text"
-                value={dealerSlug}
+                value={traderSlug}
                 onChange={(e) => {
                   setSlugManuallyEdited(true);
                   handleSlugChange(e.target.value);
@@ -163,7 +163,7 @@ export default function CreateDealerModal({
               disabled={isCreating}
               className="flex-1 px-6 py-2 bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white font-semibold rounded-lg transition-colors"
             >
-              {isCreating ? "Creating..." : "Create Dealer Account"}
+              {isCreating ? "Creating..." : "Create Trader Account"}
             </button>
             <button
               onClick={onClose}

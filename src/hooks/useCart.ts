@@ -4,7 +4,7 @@ import { useUser } from "@/contexts/UserContext";
 
 type CartItem = {
   id: string;
-  product_id: string;
+  listing_id: string;
   quantity: number;
   created_at: string;
   updated_at: string;
@@ -30,19 +30,19 @@ export function useCart() {
       const { data: items, error } = await supabase
         .schema("ecom")
         .from("cart_items")
-        .select("id, product_id, quantity, created_at, updated_at")
+        .select("id, listing_id, quantity, created_at, updated_at")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
       if (!items || items.length === 0) return [];
 
       // Fetch listing details — only active listings
-      const productIds = items.map((i) => i.product_id);
+      const listingIds = items.map((i) => i.listing_id);
       const { data: listings, error: listingsError } = await supabase
         .schema("ecom")
         .from("storefront_listings")
         .select("id, title, image_url, price_cents, currency, seller_slug, seller_name, quantity")
-        .in("id", productIds);
+        .in("id", listingIds);
 
       if (listingsError) throw listingsError;
 
@@ -50,11 +50,11 @@ export function useCart() {
 
       return items
         .map((item) => {
-          const listing = listingMap.get(item.product_id);
+          const listing = listingMap.get(item.listing_id);
           if (!listing) return null;
           return {
             id: item.id,
-            product_id: item.product_id,
+            listing_id: item.listing_id,
             quantity: item.quantity,
             created_at: item.created_at,
             updated_at: item.updated_at,
@@ -100,11 +100,11 @@ export function useAddToCart() {
   const supabase = createClient();
 
   return useMutation({
-    mutationFn: async ({ productId, quantity = 1 }: { productId: string; quantity?: number }) => {
+    mutationFn: async ({ listingId, quantity = 1 }: { listingId: string; quantity?: number }) => {
       if (!user) throw new Error("Must be logged in");
 
       const { error } = await supabase.schema("ecom").rpc("upsert_cart_item", {
-        p_product_id: productId,
+        p_listing_id: listingId,
         p_quantity: quantity,
       });
 
