@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 interface CronRow {
@@ -108,9 +108,8 @@ export default function AdminCronsPage() {
                   const isOpen = expanded === c.jobid;
                   const trimmedCommand = c.command.trim().replace(/\s+/g, " ");
                   return (
-                    <>
+                    <Fragment key={c.jobid}>
                       <tr
-                        key={c.jobid}
                         className="border-b border-gray-100 dark:border-gray-700/50 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/30"
                         onClick={() =>
                           setExpanded(isOpen ? null : c.jobid)
@@ -185,7 +184,7 @@ export default function AdminCronsPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   );
                 })}
               </tbody>

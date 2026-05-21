@@ -16,11 +16,26 @@ import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
+import { gradeLabel } from "@/lib/pricing";
 import ProductBadges from "@/components/ProductBadges";
 import type {
   CardWithDetails,
   PriceHistoryEntry,
 } from "@/types/cardDetail";
+
+type ProductListing = {
+  id: string;
+  price_cents: number | null;
+  currency: string;
+  grading_service: string | null;
+  grade: string | null;
+  quantity: number;
+  seller_slug: string;
+  seller_name: string;
+  image_url: string | null;
+  title: string;
+  updated_at: string;
+};
 
 const CHART_COLORS = [
   "#ef4444", // red
@@ -44,6 +59,7 @@ export default function CardDetailPage() {
 
   const [card, setCard] = useState<CardWithDetails | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
+  const [listings, setListings] = useState<ProductListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +70,7 @@ export default function CardDetailPage() {
       setLoading(true);
       setError(null);
 
-      const [cardResult, historyResult] = await Promise.all([
+      const [cardResult, historyResult, listingsResult] = await Promise.all([
         supabase
           .schema("cards")
           .from("products_with_details")
@@ -68,6 +84,15 @@ export default function CardDetailPage() {
           .eq("product_id", cardId)
           .order("recorded_date", { ascending: false })
           .limit(50),
+        supabase
+          .schema("ecom")
+          .from("storefront_listings")
+          .select(
+            "id,price_cents,currency,grading_service,grade,quantity,seller_slug,seller_name,image_url,title,updated_at"
+          )
+          .eq("card_product_id", cardId)
+          .order("price_cents", { ascending: true, nullsFirst: false })
+          .limit(50),
       ]);
 
       if (cardResult.error || !cardResult.data) {
@@ -78,6 +103,7 @@ export default function CardDetailPage() {
 
       setCard(cardResult.data as CardWithDetails);
       setPriceHistory((historyResult.data ?? []) as PriceHistoryEntry[]);
+      setListings((listingsResult.data ?? []) as ProductListing[]);
       setLoading(false);
     }
 
@@ -128,16 +154,11 @@ export default function CardDetailPage() {
   if (error || !card) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-12">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <Breadcrumbs items={[{ label: "Products", href: "/products" }, { label: "Not found" }]} />
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mt-4">
           <p className="text-red-600 dark:text-red-400">
             {error || "Card not found"}
           </p>
-          <Link
-            href="/"
-            className="inline-block mt-4 text-red-500 hover:text-red-600 font-medium"
-          >
-            &larr; Back to Cards
-          </Link>
         </div>
       </div>
     );
@@ -185,13 +206,20 @@ export default function CardDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      {/* Back link */}
-      <Link
-        href="/"
-        className="inline-flex items-center text-red-500 hover:text-red-600 font-medium"
-      >
-        &larr; Back to Cards
-      </Link>
+      <Breadcrumbs
+        items={[
+          { label: "Products", href: "/products" },
+          {
+            label: card.brand_name,
+            href: `/products?brand=${encodeURIComponent(card.brand_name)}`,
+          },
+          {
+            label: card.set_name,
+            href: `/products?brand=${encodeURIComponent(card.brand_name)}&set=${encodeURIComponent(card.set_name)}`,
+          },
+          { label: card.name },
+        ]}
+      />
 
       {/* Hero */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -258,6 +286,25 @@ export default function CardDetailPage() {
                   </span>
                 )}
               </div>
+              {card.language && (
+                <div className="flex items-center gap-1.5">
+                  <svg
+                    className="w-3.5 h-3.5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={1.5}
+                      d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9l5-12 5 12M9 19l-1.547-3.852M14.99 16h-4.98"
+                    />
+                  </svg>
+                  <span>{card.language}</span>
+                </div>
+              )}
             </div>
 
             {/* Price */}
@@ -271,7 +318,7 @@ export default function CardDetailPage() {
             </div>
 
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   Type
@@ -285,14 +332,6 @@ export default function CardDetailPage() {
                   isCase={card.is_case}
                   className="mt-1"
                 />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Purchases
-                </p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                  {card.purchase_unit_count ?? "—"}
-                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -569,6 +608,117 @@ export default function CardDetailPage() {
           </>
         )}
       </div>
+
+      {/* Available Listings */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+            Available Listings
+          </h2>
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {listings.length === 0
+              ? "None for sale"
+              : `${listings.length} listing${listings.length === 1 ? "" : "s"}`}
+          </span>
+        </div>
+        {listings.length === 0 ? (
+          <p className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
+            No one is currently selling this product.
+          </p>
+        ) : (
+          <ul className="divide-y divide-gray-100 dark:divide-gray-700/50">
+            {listings.map((l) => (
+              <li key={l.id}>
+                <Link
+                  href={`/listing/${l.id}`}
+                  className="flex items-center gap-4 px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors"
+                >
+                  <div className="w-12 h-16 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                    {l.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={l.image_url}
+                        alt={l.title}
+                        className="w-full h-full object-contain"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                      {l.seller_name}
+                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                      {l.grading_service && l.grading_service !== "ungraded" ? (
+                        <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                          {gradeLabel(l.grading_service, l.grade)}
+                        </span>
+                      ) : (
+                        <span>Ungraded</span>
+                      )}
+                      <span>·</span>
+                      <span>Qty {l.quantity}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-base font-bold text-red-500">
+                      {formatPrice(
+                        l.price_cents,
+                        currency,
+                        rates,
+                        l.currency
+                      )}
+                    </p>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
+  );
+}
+
+function Breadcrumbs({
+  items,
+}: {
+  items: { label: string; href?: string }[];
+}) {
+  return (
+    <nav aria-label="Breadcrumb" className="text-sm">
+      <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-gray-500 dark:text-gray-400">
+        {items.map((item, i) => {
+          const isLast = i === items.length - 1;
+          return (
+            <li key={i} className="flex items-center gap-x-1.5">
+              {item.href && !isLast ? (
+                <Link
+                  href={item.href}
+                  className="hover:text-red-500 hover:underline"
+                >
+                  {item.label}
+                </Link>
+              ) : (
+                <span
+                  className={
+                    isLast
+                      ? "text-gray-900 dark:text-gray-100 font-medium"
+                      : undefined
+                  }
+                  aria-current={isLast ? "page" : undefined}
+                >
+                  {item.label}
+                </span>
+              )}
+              {!isLast && (
+                <span className="text-gray-300 dark:text-gray-600" aria-hidden>
+                  /
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }

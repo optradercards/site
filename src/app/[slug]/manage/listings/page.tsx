@@ -23,7 +23,7 @@ export default function ListingsPage() {
   const [loading, setLoading] = useState(true);
 
   // Sorting
-  type SortKey = "card" | "set" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "profit" | "status";
+  type SortKey = "card" | "set" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "diff" | "profit" | "status";
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -73,7 +73,11 @@ export default function ListingsPage() {
         listing.price_cents != null && listing.cost_cents != null
           ? listing.price_cents - listing.cost_cents
           : null;
-      return { listing, profit };
+      const diff =
+        listing.calculated_price_cents != null && listing.price_cents != null
+          ? listing.calculated_price_cents - listing.price_cents
+          : null;
+      return { listing, profit, diff };
     });
   }, [listings]);
 
@@ -116,6 +120,10 @@ export default function ListingsPage() {
           av = a.listing.price_cents ?? -Infinity;
           bv = b.listing.price_cents ?? -Infinity;
           break;
+        case "diff":
+          av = a.diff ?? -Infinity;
+          bv = b.diff ?? -Infinity;
+          break;
         case "profit":
           av = a.profit ?? -Infinity;
           bv = b.profit ?? -Infinity;
@@ -141,6 +149,7 @@ export default function ListingsPage() {
     let totalCost = 0;
     let totalValue = 0;
     let totalProfit = 0;
+    let totalDiff = 0;
 
     for (const r of rows) {
       const qty = r.listing.quantity;
@@ -148,9 +157,10 @@ export default function ListingsPage() {
       if (r.listing.cost_cents != null) totalCost += r.listing.cost_cents * qty;
       if (r.listing.price_cents != null) totalValue += r.listing.price_cents * qty;
       if (r.profit != null) totalProfit += r.profit * qty;
+      if (r.diff != null) totalDiff += r.diff * qty;
     }
 
-    return { totalItems, totalCost, totalValue, totalProfit };
+    return { totalItems, totalCost, totalValue, totalProfit, totalDiff };
   }, [rows]);
 
   // Inline price edit handlers
@@ -217,7 +227,7 @@ export default function ListingsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <SummaryCard label="Listings" value={String(totals.totalItems)} />
         <SummaryCard label="Total Cost" value={fmt(totals.totalCost)} />
         <SummaryCard label="Listing Value" value={fmt(totals.totalValue)} />
@@ -228,6 +238,17 @@ export default function ListingsPage() {
             totals.totalProfit > 0
               ? "text-green-600 dark:text-green-400"
               : totals.totalProfit < 0
+                ? "text-red-600 dark:text-red-400"
+                : undefined
+          }
+        />
+        <SummaryCard
+          label="Calc − Listed"
+          value={`${totals.totalDiff > 0 ? "+" : ""}${fmt(totals.totalDiff)}`}
+          color={
+            totals.totalDiff > 0
+              ? "text-green-600 dark:text-green-400"
+              : totals.totalDiff < 0
                 ? "text-red-600 dark:text-red-400"
                 : undefined
           }
@@ -255,15 +276,12 @@ export default function ListingsPage() {
                 <SortHeader label="Set" sortKey="set" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Grade" sortKey="grade" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Qty" sortKey="qty" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                <th className="px-4 py-3 text-left">Pricing</th>
                 <SortHeader label="Cost" sortKey="cost" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Market" sortKey="market" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                <th className="px-4 py-3 text-right">Rate</th>
-                <th className="px-4 py-3 text-center">Mode</th>
-                <th className="px-4 py-3 text-right">Mult</th>
-                <th className="px-4 py-3 text-right">Round</th>
-                <th className="px-4 py-3 text-right">Extra</th>
                 <SortHeader label="Calculated" sortKey="calculated" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Price" sortKey="price" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Diff" sortKey="diff" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Profit" sortKey="profit" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Status" sortKey="status" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
               </tr>
@@ -271,11 +289,24 @@ export default function ListingsPage() {
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
               {sortedRows.map((r) => {
                 const isEditing = editingId === r.listing.id;
+                const priceStale =
+                  r.listing.calculated_price_cents != null &&
+                  r.listing.price_cents != null &&
+                  r.listing.calculated_price_cents !== r.listing.price_cents;
 
                 return (
                   <tr
                     key={r.listing.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    className={
+                      priceStale
+                        ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/10 dark:hover:bg-amber-900/20"
+                        : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    }
+                    title={
+                      priceStale
+                        ? "Listed price differs from the current calculated price"
+                        : undefined
+                    }
                   >
                     {/* Image */}
                     <td className="px-4 py-3">
@@ -309,6 +340,36 @@ export default function ListingsPage() {
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {r.listing.quantity}
                     </td>
+                    {/* Pricing \u2014 Mode + (market: mult, round, extra) + rate */}
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-0.5 text-xs">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                            r.listing.pricing_mode === "fixed"
+                              ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                              : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                          }`}>
+                            {r.listing.pricing_mode === "fixed" ? "Fixed" : "Mkt"}
+                          </span>
+                          {r.listing.pricing_mode === "market" && (
+                            <span className="text-gray-700 dark:text-gray-300 tabular-nums">
+                              {r.listing.market_multiplier != null && `\u00d7${r.listing.market_multiplier}`}
+                              {r.listing.market_round_to != null && (
+                                <span className="text-gray-400 dark:text-gray-500"> rd {fmt(r.listing.market_round_to)}</span>
+                              )}
+                              {r.listing.market_extra_cents ? (
+                                <span className="text-gray-400 dark:text-gray-500"> +{fmt(r.listing.market_extra_cents)}</span>
+                              ) : null}
+                            </span>
+                          )}
+                        </div>
+                        {r.listing.exchange_rate != null && (
+                          <span className="text-gray-400 dark:text-gray-500 tabular-nums">
+                            rate {Number(r.listing.exchange_rate).toFixed(4)}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     {/* Cost */}
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmt(r.listing.cost_cents)}
@@ -316,40 +377,6 @@ export default function ListingsPage() {
                     {/* Market */}
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmt(r.listing.market_price_cents)}
-                    </td>
-                    {/* Exchange Rate */}
-                    <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
-                      {r.listing.exchange_rate != null
-                        ? Number(r.listing.exchange_rate).toFixed(4)
-                        : "\u2014"}
-                    </td>
-                    {/* Mode */}
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                        r.listing.pricing_mode === "fixed"
-                          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                      }`}>
-                        {r.listing.pricing_mode === "fixed" ? "Fixed" : "Mkt"}
-                      </span>
-                    </td>
-                    {/* Multiplier */}
-                    <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
-                      {r.listing.pricing_mode === "market" && r.listing.market_multiplier != null
-                        ? `${r.listing.market_multiplier}x`
-                        : "\u2014"}
-                    </td>
-                    {/* Round */}
-                    <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
-                      {r.listing.pricing_mode === "market" && r.listing.market_round_to != null
-                        ? fmt(r.listing.market_round_to)
-                        : "\u2014"}
-                    </td>
-                    {/* Extra */}
-                    <td className="px-4 py-3 text-right text-gray-500 dark:text-gray-400 tabular-nums">
-                      {r.listing.pricing_mode === "market" && r.listing.market_extra_cents
-                        ? fmt(r.listing.market_extra_cents)
-                        : "\u2014"}
                     </td>
                     {/* Calculated */}
                     <td className={`px-4 py-3 text-right ${
@@ -401,6 +428,21 @@ export default function ListingsPage() {
                           {fmt(r.listing.price_cents)}
                         </button>
                       )}
+                    </td>
+                    {/* Diff (calculated − listed) */}
+                    <td
+                      className={`px-4 py-3 text-right tabular-nums font-medium ${
+                        r.diff != null && r.diff > 0
+                          ? "text-green-600 dark:text-green-400"
+                          : r.diff != null && r.diff < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-gray-400 dark:text-gray-500"
+                      }`}
+                      title="Calculated price − listed price"
+                    >
+                      {r.diff == null
+                        ? "—"
+                        : `${r.diff > 0 ? "+" : ""}${fmt(r.diff)}`}
                     </td>
                     {/* Profit */}
                     <td

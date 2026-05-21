@@ -57,6 +57,7 @@ const adminNavItems: NavItem[] = [
     children: [
       { href: "/admin/external/settings", label: "Settings", icon: "🔑" },
       { href: "/admin/external/sync", label: "Sync", icon: "🔄" },
+      { href: "/admin/external/exchange-rates", label: "Exchange Rates", icon: "💱" },
       { href: "/admin/external/import-brands", label: "Import Brands", icon: "🏷️" },
       { href: "/admin/external/import-products", label: "Import Products", icon: "💾" },
       { href: "/admin/external/import-collections", label: "Import Collections", icon: "📦" },
