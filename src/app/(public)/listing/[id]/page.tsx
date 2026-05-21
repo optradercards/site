@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { formatPrice } from "@/lib/currency";
+import { fetchExchangeRates, formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import ListingActions from "@/components/ListingActions";
 import ProductBadges from "@/components/ProductBadges";
@@ -41,16 +41,6 @@ type SellerLocation = {
   state_province: string;
   country: string;
 };
-
-async function fetchExchangeRates(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<Record<string, number>> {
-  try {
-    const { data } = await supabase.functions.invoke("exchange-rates");
-    if (data?.success) return data.rates as Record<string, number>;
-  } catch {}
-  return {};
-}
 
 export async function generateMetadata({
   params,

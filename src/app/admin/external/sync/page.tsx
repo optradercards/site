@@ -11,7 +11,7 @@ export default function CatalogSyncPage() {
   const [priceLoading, setPriceLoading] = useState(false);
   const [catalogJobId, setCatalogJobId] = useState<string | null>(null);
   const [historyJobId, setHistoryJobId] = useState<string | null>(null);
-  const [priceResult, setPriceResult] = useState<{ count: number; ratesUpdated?: number } | null>(null);
+  const [priceResult, setPriceResult] = useState<{ count: number; ratesRefreshed?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const supabase = createClient();
@@ -44,43 +44,26 @@ export default function CatalogSyncPage() {
     setPriceResult(null);
 
     try {
-      // 1. Fetch live exchange rates
-      const { data: ratesData, error: ratesError } = await supabase.functions.invoke("exchange-rates");
+      // 1. Refresh the public.exchange_rates table from Shiny. The
+      //    pricing function reads rates from this table at compute
+      //    time, so updating the snapshot is enough — no per-listing
+      //    writes needed any more.
+      const { data: ratesData, error: ratesError } =
+        await supabase.functions.invoke("refresh-exchange-rates");
       if (ratesError) throw new Error(ratesError.message);
-      if (!ratesData?.success) throw new Error("Failed to fetch exchange rates");
-      const rates = ratesData.rates as Record<string, number>;
-
-      // 2. Update exchange_rate on all non-USD active products
-      const { data: products, error: fetchErr } = await supabase
-        .schema("ecom")
-        .from("listings")
-        .select("id, currency")
-        .eq("status", "active")
-        .neq("currency", "USD");
-
-      if (fetchErr) throw new Error(fetchErr.message);
-
-      let ratesUpdated = 0;
-      for (const product of products ?? []) {
-        const rate = rates[product.currency.toLowerCase()];
-        if (rate != null) {
-          const { error: upErr } = await supabase
-            .schema("ecom")
-            .from("products")
-            .update({ exchange_rate: rate })
-            .eq("id", product.id);
-          if (!upErr) ratesUpdated++;
-        }
+      if (!ratesData?.success) {
+        throw new Error(ratesData?.error ?? "Failed to refresh exchange rates");
       }
+      const ratesRefreshed = (ratesData.count as number | undefined) ?? 0;
 
-      // 3. Recalculate price_cents from computed function
+      // 2. Recompute price_cents for active listings against the
+      //    fresh rates + market data.
       const { data, error: rpcError } = await supabase
         .schema("ecom")
         .rpc("refresh_prices");
-
       if (rpcError) throw new Error(rpcError.message);
       const count = data?.[0]?.updated_count ?? data?.updated_count ?? 0;
-      setPriceResult({ count, ratesUpdated });
+      setPriceResult({ count, ratesRefreshed });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -318,8 +301,8 @@ export default function CatalogSyncPage() {
           {priceResult && (
             <div className="mt-4 space-y-1 text-sm">
               <p className="text-green-600 dark:text-green-400 font-medium">Refresh complete</p>
-              {priceResult.ratesUpdated != null && (
-                <p>Exchange rates updated: {priceResult.ratesUpdated} products</p>
+              {priceResult.ratesRefreshed != null && (
+                <p>Exchange rates refreshed: {priceResult.ratesRefreshed} currencies</p>
               )}
               <p>Prices recalculated: {priceResult.count} listings</p>
             </div>

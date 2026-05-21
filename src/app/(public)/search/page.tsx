@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { formatPrice } from "@/lib/currency";
+import { fetchExchangeRates, formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import MarketplaceSearch from "@/components/MarketplaceSearch";
 import ProductBadges from "@/components/ProductBadges";
@@ -37,16 +37,6 @@ type Listing = {
 };
 
 const PAGE_SIZE = 40;
-
-async function fetchExchangeRates(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<Record<string, number>> {
-  try {
-    const { data } = await supabase.functions.invoke("exchange-rates");
-    if (data?.success) return data.rates as Record<string, number>;
-  } catch {}
-  return {};
-}
 
 export default async function SearchPage({
   searchParams,

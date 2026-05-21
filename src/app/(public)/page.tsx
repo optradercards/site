@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { formatPrice } from "@/lib/currency";
+import { fetchExchangeRates, formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 
 export const metadata: Metadata = {
@@ -28,16 +28,6 @@ type Listing = {
   seller_name: string;
   quantity: number;
 };
-
-async function fetchExchangeRates(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<Record<string, number>> {
-  try {
-    const { data } = await supabase.functions.invoke("exchange-rates");
-    if (data?.success) return data.rates as Record<string, number>;
-  } catch {}
-  return {};
-}
 
 type Brand = {
   id: string;

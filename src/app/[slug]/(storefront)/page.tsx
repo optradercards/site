@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { formatPrice } from "@/lib/currency";
+import { fetchExchangeRates, formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import MarketplaceSearch from "@/components/MarketplaceSearch";
 import ProductBadges from "@/components/ProductBadges";
@@ -29,16 +29,6 @@ type Listing = {
   is_variant_edition: boolean;
   is_case: boolean;
 };
-
-async function fetchExchangeRates(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<Record<string, number>> {
-  try {
-    const { data } = await supabase.functions.invoke("exchange-rates");
-    if (data?.success) return data.rates as Record<string, number>;
-  } catch {}
-  return {};
-}
 
 export default async function StorefrontPage({
   params,

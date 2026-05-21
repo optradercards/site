@@ -363,11 +363,6 @@ export default function ListingsPage() {
                             </span>
                           )}
                         </div>
-                        {r.listing.exchange_rate != null && (
-                          <span className="text-gray-400 dark:text-gray-500 tabular-nums">
-                            rate {Number(r.listing.exchange_rate).toFixed(4)}
-                          </span>
-                        )}
                       </div>
                     </td>
                     {/* Cost */}

@@ -473,7 +473,6 @@ export default function UnlistedPage() {
         market_round_to: matched?.roundTo ?? 100,
         market_extra_cents: matched?.extraCents ?? 0,
         cost_cents: r.costSeller,
-        exchange_rate: exchangeRate,
         price_cents: r.priceCents,
         currency: sellerCurrency,
         quantity: r.item.quantity,

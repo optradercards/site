@@ -42,7 +42,6 @@ export type EcomListing = {
   cost_multiplier: number | null;
   cost_round_to: number | null;
   cost_cents: number | null;
-  exchange_rate: number | null;
   price_cents: number | null;
   calculated_price_cents: number | null;
   market_price_cents: number | null;
