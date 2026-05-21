@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Papa from "papaparse";
@@ -26,6 +26,7 @@ import { formatPrice } from "@/lib/currency";
 
 type CsvRow = {
   external_id: string | null;
+  shiny_product_id: string | null;
   card_product_id: string | null;
   card_number: string | null;
   set_name: string | null;
@@ -35,6 +36,7 @@ type CsvRow = {
   quantity: number;
   purchase_cents: number | null;
   purchase_currency: string | null;
+  group_name: string | null;
 };
 
 type Lot = {
@@ -44,6 +46,8 @@ type Lot = {
   grade: string | null;
   quantity_remaining: number;
   acquisition_source: string;
+  acquisition_cost_cents: number | null;
+  acquisition_currency: string;
 };
 
 type ProductInfo = {
@@ -73,6 +77,9 @@ type Bucket = {
   op_qty: number;
   csv_cost_cents: number | null;
   csv_currency: string | null;
+  csv_group_name: string | null;
+  csv_rows: CsvRow[];
+  lots: Lot[];
   product: ProductInfo | null;
   status: Status;
 };
@@ -88,6 +95,7 @@ const STATUS_ORDER: Record<Status, number> = {
 const TEMPLATE = [
   [
     "external_id",
+    "shiny_product_id",
     "card_product_id",
     "card_number",
     "set_name",
@@ -99,6 +107,7 @@ const TEMPLATE = [
     "purchase_currency",
   ],
   [
+    "",
     "",
     "",
     "OP01-001",
@@ -149,6 +158,7 @@ function parseCsv(file: File): Promise<CsvRow[]> {
         try {
           const rows: CsvRow[] = results.data.map((r) => ({
             external_id: emptyStr(r.external_id),
+            shiny_product_id: emptyStr(r.shiny_product_id),
             card_product_id: emptyStr(r.card_product_id),
             card_number: emptyStr(r.card_number),
             set_name: emptyStr(r.set_name),
@@ -158,6 +168,7 @@ function parseCsv(file: File): Promise<CsvRow[]> {
             quantity: Number(r.quantity) || 0,
             purchase_cents: parseDollarsToCents(r.purchase_price),
             purchase_currency: emptyStr(r.purchase_currency),
+            group_name: emptyStr(r.group_name),
           }));
           resolve(rows);
         } catch (err) {
@@ -236,6 +247,17 @@ export default function InventoryReconcilePage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
+  const [batchCreating, setBatchCreating] = useState<boolean>(false);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (key: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   type FilterKey = "all" | Status;
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -249,7 +271,7 @@ export default function InventoryReconcilePage() {
       .schema("ecom")
       .from("inventory_lots")
       .select(
-        "id, card_product_id, grading_service, grade, quantity_remaining, acquisition_source",
+        "id, card_product_id, grading_service, grade, quantity_remaining, acquisition_source, acquisition_cost_cents, acquisition_currency",
       )
       .eq("account_id", activeAccountId)
       .gt("quantity_remaining", 0);
@@ -277,10 +299,37 @@ export default function InventoryReconcilePage() {
       const map = new Map<number, ProductInfo>();
       if (rows.length === 0) return map;
 
-      const directIds = Array.from(
+      // (0) Resolve via cards.product_sources when a Shiny product id was
+      // included in the CSV — this is the exact mapping (Shiny id → our
+      // UUID) and side-steps name fuzzy matching for variant disambiguation.
+      const shinyIds = Array.from(
         new Set(
-          rows.map((r) => r.card_product_id).filter((x): x is string => !!x),
+          rows.map((r) => r.shiny_product_id).filter((x): x is string => !!x),
         ),
+      );
+      const shinyToOurs = new Map<string, string>();
+      if (shinyIds.length > 0) {
+        const { data: srcRows } = await supabase
+          .schema("cards")
+          .from("product_sources")
+          .select("product_id, source_id")
+          .eq("source_provider", "shiny")
+          .in("source_id", shinyIds);
+        for (const r of (srcRows ?? []) as {
+          product_id: string;
+          source_id: string;
+        }[]) {
+          shinyToOurs.set(r.source_id, r.product_id);
+        }
+      }
+
+      const directIds = Array.from(
+        new Set([
+          ...rows
+            .map((r) => r.card_product_id)
+            .filter((x): x is string => !!x),
+          ...Array.from(shinyToOurs.values()),
+        ]),
       );
       const directMap = new Map<string, ProductInfo>();
       if (directIds.length > 0) {
@@ -344,6 +393,16 @@ export default function InventoryReconcilePage() {
       }
 
       rows.forEach((r, i) => {
+        if (r.shiny_product_id) {
+          const ourId = shinyToOurs.get(r.shiny_product_id);
+          if (ourId) {
+            const hit = directMap.get(ourId);
+            if (hit) {
+              map.set(i, hit);
+              return;
+            }
+          }
+        }
         if (r.card_product_id) {
           const hit = directMap.get(r.card_product_id);
           if (hit) map.set(i, hit);
@@ -384,8 +443,16 @@ export default function InventoryReconcilePage() {
     setFileName(file.name);
     try {
       const rows = await parseCsv(file);
-      setCsvRows(rows);
       const catalog = await resolveCatalog(rows);
+      // Stamp the resolved card_product_id back onto each row so the
+      // downstream resolveRow (in the buckets memo) doesn't need to
+      // redo the shiny → our-UUID lookup.
+      const stamped = rows.map((r, i) => {
+        if (r.card_product_id) return r;
+        const hit = catalog.get(i);
+        return hit ? { ...r, card_product_id: hit.id } : r;
+      });
+      setCsvRows(stamped);
       const lotCardIds = Array.from(
         new Set(
           (lots ?? [])
@@ -486,12 +553,17 @@ export default function InventoryReconcilePage() {
           op_qty: 0,
           csv_cost_cents: null,
           csv_currency: null,
+          csv_group_name: null,
+          csv_rows: [],
+          lots: [],
           product,
           status: "matched_equal",
         };
         map.set(key, b);
       }
       b.csv_qty += r.quantity;
+      b.csv_rows.push(r);
+      if (r.group_name && !b.csv_group_name) b.csv_group_name = r.group_name;
       if (r.purchase_cents != null && b.csv_cost_cents == null) {
         b.csv_cost_cents = r.purchase_cents;
         b.csv_currency = (r.purchase_currency ?? "AUD").toUpperCase();
@@ -517,12 +589,16 @@ export default function InventoryReconcilePage() {
           op_qty: 0,
           csv_cost_cents: null,
           csv_currency: null,
+          csv_group_name: null,
+          csv_rows: [],
+          lots: [],
           product,
           status: "matched_equal",
         };
         map.set(key, b);
       }
       b.op_qty += l.quantity_remaining;
+      b.lots.push(l);
     }
 
     for (const b of map.values()) {
@@ -632,6 +708,112 @@ export default function InventoryReconcilePage() {
     } finally {
       setCreatingKey(null);
     }
+  };
+
+  const createLotForRow = async (b: Bucket, row: CsvRow, rowIdx: number) => {
+    if (!activeAccountId) return;
+    if (!b.card_product_id) {
+      setError("Bucket has no catalog match — can't seed a lot.");
+      return;
+    }
+    if (row.purchase_cents == null) {
+      setError("This CSV row has no purchase price — can't seed a lot.");
+      return;
+    }
+    const rowKey = `${b.key}::row::${rowIdx}`;
+    setCreatingKey(rowKey);
+    setError(null);
+    setNotice(null);
+    try {
+      const qty = row.quantity || 1;
+      const currency = (row.purchase_currency ?? "AUD").toUpperCase();
+      const subtotal = row.purchase_cents * qty;
+      const today = new Date().toISOString().slice(0, 10);
+
+      const { data: purchase, error: pErr } = await supabase
+        .schema("ecom")
+        .from("purchases")
+        .insert({
+          account_id: activeAccountId,
+          purchased_at: today,
+          subtotal_cents: subtotal,
+          shipping_cents: 0,
+          fees_cents: 0,
+          total_cents: subtotal,
+          purchase_currency: currency,
+          allocation_method: "equal",
+          notes: `Lot seeded from inventory reconcile CSV row on ${today}.`,
+        })
+        .select("id")
+        .single();
+      if (pErr) throw pErr;
+
+      const { error: lErr } = await supabase
+        .schema("ecom")
+        .from("inventory_lots")
+        .insert({
+          account_id: activeAccountId,
+          card_product_id: b.card_product_id,
+          grading_service: b.grading_service,
+          grade: b.grade,
+          quantity_acquired: qty,
+          quantity_remaining: qty,
+          acquisition_cost_cents: row.purchase_cents,
+          acquisition_currency: currency,
+          acquisition_source: "purchase",
+          acquired_at: today,
+          purchase_id: purchase.id,
+        });
+      if (lErr) throw lErr;
+
+      setNotice(
+        `Created a lot of ${qty} at ${formatPrice(
+          row.purchase_cents,
+          sellerCurrency,
+          rates ?? {},
+          currency,
+        )} for ${b.product?.name ?? "card"}.`,
+      );
+      await loadLots();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create lot");
+    } finally {
+      setCreatingKey(null);
+    }
+  };
+
+  const batchCreateLotsForCsvOnly = async () => {
+    if (!activeAccountId) return;
+    const targets = filteredBuckets.filter(
+      (b) =>
+        b.status === "csv_only" &&
+        b.card_product_id &&
+        b.csv_cost_cents != null,
+    );
+    if (targets.length === 0) return;
+    setBatchCreating(true);
+    setError(null);
+    setNotice(null);
+    let created = 0;
+    const errors: string[] = [];
+    for (const b of targets) {
+      try {
+        await createLot(b);
+        created++;
+      } catch (e) {
+        errors.push(
+          `${b.product?.name ?? b.csv_card_name ?? "row"}: ${
+            e instanceof Error ? e.message : "failed"
+          }`,
+        );
+      }
+    }
+    setBatchCreating(false);
+    setNotice(
+      `Created ${created} lot${created === 1 ? "" : "s"}` +
+        (errors.length > 0 ? `; ${errors.length} error${errors.length === 1 ? "" : "s"}.` : "."),
+    );
+    if (errors.length > 0) setError(errors.slice(0, 5).join("; "));
   };
 
   return (
@@ -761,6 +943,25 @@ export default function InventoryReconcilePage() {
             placeholder="Search card, number, set…"
             className="ml-auto px-3 py-1.5 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
           />
+          {(() => {
+            const n = filteredBuckets.filter(
+              (b) =>
+                b.status === "csv_only" &&
+                b.card_product_id &&
+                b.csv_cost_cents != null,
+            ).length;
+            if (n === 0) return null;
+            return (
+              <button
+                type="button"
+                onClick={batchCreateLotsForCsvOnly}
+                disabled={batchCreating}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-gray-800 hover:bg-gray-900 rounded disabled:opacity-50"
+              >
+                {batchCreating ? "Creating…" : `Create ${n} lots`}
+              </button>
+            );
+          })()}
         </div>
       )}
 
@@ -796,76 +997,115 @@ export default function InventoryReconcilePage() {
                     <th className="px-3 py-2 text-right">CSV qty</th>
                     <th className="px-3 py-2 text-right">OP Trader qty</th>
                     <th className="px-3 py-2 text-right">CSV cost</th>
+                    <th className="px-3 py-2 text-left">Group</th>
                     <th className="px-3 py-2 text-left">Status</th>
                     <th className="px-3 py-2 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                  {filteredBuckets.map((b) => (
-                    <tr key={b.key} className="align-top">
-                      <td className="px-3 py-3">
-                        {b.product?.image_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={b.product.image_url}
-                            alt={b.product.name ?? ""}
-                            className="w-10 h-14 object-contain rounded"
-                          />
-                        ) : (
-                          <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded" />
+                  {filteredBuckets.map((b) => {
+                    const canExpand =
+                      b.csv_rows.length + b.lots.length > 1 ||
+                      b.status === "qty_mismatch";
+                    const isOpen = expanded.has(b.key);
+                    return (
+                      <Fragment key={b.key}>
+                        <tr className="align-top">
+                          <td className="px-3 py-3">
+                            {b.product?.image_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={b.product.image_url}
+                                alt={b.product.name ?? ""}
+                                className="w-10 h-14 object-contain rounded"
+                              />
+                            ) : (
+                              <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded" />
+                            )}
+                          </td>
+                          <td className="px-3 py-3 text-gray-900 dark:text-gray-100">
+                            <div className="flex items-start gap-2">
+                              {canExpand && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpanded(b.key)}
+                                  className="mt-0.5 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xs leading-none w-4 flex-shrink-0"
+                                  aria-label={isOpen ? "Collapse" : "Expand"}
+                                >
+                                  {isOpen ? "▼" : "▶"}
+                                </button>
+                              )}
+                              <div className={canExpand ? "" : "ml-6"}>
+                                <p className="font-medium">
+                                  {b.product?.name ?? b.csv_card_name ?? "(unknown card)"}
+                                  {(b.product?.card_number ?? b.csv_card_number) && (
+                                    <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                                      #{b.product?.card_number ?? b.csv_card_number}
+                                    </span>
+                                  )}
+                                </p>
+                                {(b.product?.set_name ?? b.csv_set_name) && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {b.product?.set_name ?? b.csv_set_name}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-3 text-gray-600 dark:text-gray-400">
+                            {gradeLabel(b.grading_service, b.grade)}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {b.csv_qty || "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {b.op_qty || "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                            {b.csv_cost_cents != null
+                              ? formatPrice(
+                                  b.csv_cost_cents,
+                                  sellerCurrency,
+                                  rates ?? {},
+                                  b.csv_currency ?? sellerCurrency,
+                                )
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                            {b.csv_group_name ?? "—"}
+                          </td>
+                          <td className="px-3 py-3">{statusBadge(b.status)}</td>
+                          <td className="px-3 py-3 text-right whitespace-nowrap">
+                            {b.status === "csv_only" &&
+                              b.card_product_id &&
+                              b.csv_cost_cents != null && (
+                                <button
+                                  type="button"
+                                  onClick={() => createLot(b)}
+                                  disabled={creatingKey === b.key}
+                                  className="px-2.5 py-1 text-xs font-medium text-white bg-gray-800 hover:bg-gray-900 rounded disabled:opacity-50"
+                                >
+                                  {creatingKey === b.key ? "Creating…" : "Create lot"}
+                                </button>
+                              )}
+                          </td>
+                        </tr>
+                        {canExpand && isOpen && (
+                          <tr className="bg-gray-50 dark:bg-gray-900/40">
+                            <td colSpan={9} className="px-3 py-3">
+                              <BucketDetail
+                                bucket={b}
+                                sellerCurrency={sellerCurrency}
+                                rates={rates ?? {}}
+                                creatingKey={creatingKey}
+                                onCreateRow={createLotForRow}
+                              />
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                      <td className="px-3 py-3 text-gray-900 dark:text-gray-100">
-                        <p className="font-medium">
-                          {b.product?.name ?? b.csv_card_name ?? "(unknown card)"}
-                          {(b.product?.card_number ?? b.csv_card_number) && (
-                            <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
-                              #{b.product?.card_number ?? b.csv_card_number}
-                            </span>
-                          )}
-                        </p>
-                        {(b.product?.set_name ?? b.csv_set_name) && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">
-                            {b.product?.set_name ?? b.csv_set_name}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-3 py-3 text-gray-600 dark:text-gray-400">
-                        {gradeLabel(b.grading_service, b.grade)}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {b.csv_qty || "—"}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        {b.op_qty || "—"}
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                        {b.csv_cost_cents != null
-                          ? formatPrice(
-                              b.csv_cost_cents,
-                              sellerCurrency,
-                              rates ?? {},
-                              b.csv_currency ?? sellerCurrency,
-                            )
-                          : "—"}
-                      </td>
-                      <td className="px-3 py-3">{statusBadge(b.status)}</td>
-                      <td className="px-3 py-3 text-right whitespace-nowrap">
-                        {b.status === "csv_only" &&
-                          b.card_product_id &&
-                          b.csv_cost_cents != null && (
-                            <button
-                              type="button"
-                              onClick={() => createLot(b)}
-                              disabled={creatingKey === b.key}
-                              className="px-2.5 py-1 text-xs font-medium text-white bg-gray-800 hover:bg-gray-900 rounded disabled:opacity-50"
-                            >
-                              {creatingKey === b.key ? "Creating…" : "Create lot"}
-                            </button>
-                          )}
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -895,6 +1135,143 @@ function Counter({
       >
         {value}
       </p>
+    </div>
+  );
+}
+
+function BucketDetail({
+  bucket,
+  sellerCurrency,
+  rates,
+  creatingKey,
+  onCreateRow,
+}: {
+  bucket: Bucket;
+  sellerCurrency: string;
+  rates: Record<string, number>;
+  creatingKey: string | null;
+  onCreateRow: (b: Bucket, row: CsvRow, rowIdx: number) => void;
+}) {
+  const showCreate =
+    bucket.card_product_id != null &&
+    bucket.csv_qty > bucket.op_qty; // only offer per-row when CSV has more units than we own
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
+          CSV rows ({bucket.csv_rows.length})
+        </p>
+        {bucket.csv_rows.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">No CSV rows.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="text-gray-500 dark:text-gray-400">
+              <tr>
+                <th className="text-right pr-2 font-medium">Qty</th>
+                <th className="text-right pr-2 font-medium">Price</th>
+                <th className="text-left pr-2 font-medium">Group</th>
+                <th className="text-left pr-2 font-medium">Source id</th>
+                {showCreate && <th className="text-right pr-1 font-medium"></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {bucket.csv_rows.map((r, i) => {
+                const rowKey = `${bucket.key}::row::${i}`;
+                const isCreating = creatingKey === rowKey;
+                return (
+                  <tr
+                    key={i}
+                    className="border-t border-gray-200 dark:border-gray-700"
+                  >
+                    <td className="text-right pr-2 py-1 tabular-nums text-gray-800 dark:text-gray-200">
+                      {r.quantity}
+                    </td>
+                    <td className="text-right pr-2 py-1 tabular-nums text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                      {r.purchase_cents != null
+                        ? formatPrice(
+                            r.purchase_cents,
+                            sellerCurrency,
+                            rates,
+                            (r.purchase_currency ?? "AUD").toUpperCase(),
+                          )
+                        : "—"}
+                    </td>
+                    <td className="text-left pr-2 py-1 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {r.group_name ?? "—"}
+                    </td>
+                    <td className="text-left pr-2 py-1 text-gray-500 dark:text-gray-500 font-mono text-[10px] truncate max-w-[120px]">
+                      {r.shiny_product_id ?? r.external_id ?? "—"}
+                    </td>
+                    {showCreate && (
+                      <td className="text-right pr-1 py-1 whitespace-nowrap">
+                        {r.purchase_cents != null && (
+                          <button
+                            type="button"
+                            onClick={() => onCreateRow(bucket, r, i)}
+                            disabled={isCreating}
+                            className="px-2 py-0.5 text-[10px] font-medium text-white bg-gray-800 hover:bg-gray-900 rounded disabled:opacity-50"
+                          >
+                            {isCreating ? "…" : "Create lot"}
+                          </button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div>
+        <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">
+          OP Trader lots ({bucket.lots.length})
+        </p>
+        {bucket.lots.length === 0 ? (
+          <p className="text-xs text-gray-400 italic">No lots.</p>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="text-gray-500 dark:text-gray-400">
+              <tr>
+                <th className="text-right pr-2 font-medium">Qty</th>
+                <th className="text-right pr-2 font-medium">Cost</th>
+                <th className="text-left pr-2 font-medium">Source</th>
+                <th className="text-left pr-2 font-medium">Lot id</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bucket.lots.map((l) => (
+                <tr
+                  key={l.id}
+                  className="border-t border-gray-200 dark:border-gray-700"
+                >
+                  <td className="text-right pr-2 py-1 tabular-nums text-gray-800 dark:text-gray-200">
+                    {l.quantity_remaining}
+                  </td>
+                  <td className="text-right pr-2 py-1 tabular-nums text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                    {l.acquisition_cost_cents != null
+                      ? formatPrice(
+                          l.acquisition_cost_cents,
+                          sellerCurrency,
+                          rates,
+                          (l.acquisition_currency ?? "AUD").toUpperCase(),
+                        )
+                      : "—"}
+                  </td>
+                  <td className="text-left pr-2 py-1 text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                    {l.acquisition_source}
+                  </td>
+                  <td className="text-left pr-2 py-1 text-gray-500 dark:text-gray-500 font-mono text-[10px] truncate max-w-[120px]">
+                    {l.id.slice(0, 8)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 }

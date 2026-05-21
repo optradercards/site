@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
-import ProductLink from "@/components/ProductLink";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // Store Page — shows ecom.listings (active listings)
@@ -23,7 +23,7 @@ export default function ListingsPage() {
   const [loading, setLoading] = useState(true);
 
   // Sorting
-  type SortKey = "card" | "set" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "diff" | "profit" | "status";
+  type SortKey = "card" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "diff" | "profit" | "status";
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -41,6 +41,24 @@ export default function ListingsPage() {
   const [editPrice, setEditPrice] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Bulk action state
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [bulkUnlisting, setBulkUnlisting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  // Selection (matches unlisted page pattern)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
   const loadData = useCallback(async () => {
     if (!activeAccountId) return;
     setLoading(true);
@@ -49,7 +67,8 @@ export default function ListingsPage() {
       .schema("ecom")
       .from("listing_details")
       .select("*")
-      .eq("account_id", activeAccountId);
+      .eq("account_id", activeAccountId)
+      .neq("status", "archived");
 
     setListings((data ?? []) as EcomListing[]);
     setLoading(false);
@@ -77,7 +96,14 @@ export default function ListingsPage() {
         listing.calculated_price_cents != null && listing.price_cents != null
           ? listing.calculated_price_cents - listing.price_cents
           : null;
-      return { listing, profit, diff };
+      // What the row would earn if it sold at the calculated price
+      // instead of the current listed price — answers "is bumping to
+      // the calculated price worth it?"
+      const calcProfit =
+        listing.calculated_price_cents != null && listing.cost_cents != null
+          ? listing.calculated_price_cents - listing.cost_cents
+          : null;
+      return { listing, profit, diff, calcProfit };
     });
   }, [listings]);
 
@@ -89,12 +115,10 @@ export default function ListingsPage() {
       let bv: string | number | null = null;
       switch (sortKey) {
         case "card":
-          av = a.listing.card_name?.toLowerCase() ?? "";
-          bv = b.listing.card_name?.toLowerCase() ?? "";
-          break;
-        case "set":
-          av = a.listing.set_name?.toLowerCase() ?? "";
-          bv = b.listing.set_name?.toLowerCase() ?? "";
+          // Sort by card name, then set so cards with the same name
+          // (e.g. reprints across sets) group their sets predictably.
+          av = `${a.listing.card_name?.toLowerCase() ?? ""}|${a.listing.set_name?.toLowerCase() ?? ""}`;
+          bv = `${b.listing.card_name?.toLowerCase() ?? ""}|${b.listing.set_name?.toLowerCase() ?? ""}`;
           break;
         case "grade":
           av = gradeLabel(a.listing.grading_service, a.listing.grade).toLowerCase();
@@ -163,6 +187,28 @@ export default function ListingsPage() {
     return { totalItems, totalCost, totalValue, totalProfit, totalDiff };
   }, [rows]);
 
+  // Pricing health — how many listings are priced under, on, or over
+  // their calculated value. Uses a ±5% tolerance band so micro-drift
+  // (rounding, cents-level rate changes) doesn't churn the buckets.
+  // Listings without a calculated price (e.g. cost_plus with unknown
+  // blended cost) and zero-priced rows are skipped.
+  const PRICING_TOLERANCE = 0.05;
+  const pricingHealth = useMemo(() => {
+    let under = 0;
+    let onTarget = 0;
+    let over = 0;
+    for (const r of rows) {
+      const listed = r.listing.price_cents;
+      const calc = r.listing.calculated_price_cents;
+      if (listed == null || calc == null || listed === 0) continue;
+      const ratio = (calc - listed) / listed;
+      if (ratio > PRICING_TOLERANCE) under++;
+      else if (ratio < -PRICING_TOLERANCE) over++;
+      else onTarget++;
+    }
+    return { under, onTarget, over };
+  }, [rows]);
+
   // Inline price edit handlers
   const startEditing = (listing: EcomListing) => {
     setEditingId(listing.id);
@@ -203,6 +249,130 @@ export default function ListingsPage() {
     setEditingId(null);
   };
 
+  // Bulk-sync every listing whose materialized price has drifted from
+  // its calculated price. Skips rows without a calculated price (cost-plus
+  // with unknown cost, etc.).
+  const bulkUpdateStale = async () => {
+    const targets = listings.filter(
+      (l) =>
+        l.calculated_price_cents != null &&
+        l.calculated_price_cents !== l.price_cents,
+    );
+    if (targets.length === 0) return;
+    setBulkUpdating(true);
+    setActionError(null);
+    setActionNotice(null);
+    let ok = 0;
+    let failed = 0;
+    for (const l of targets) {
+      const patch: Record<string, number | null> = {
+        price_cents: l.calculated_price_cents,
+      };
+      if (l.pricing_mode === "fixed") {
+        patch.fixed_price_cents = l.calculated_price_cents;
+      }
+      const { error } = await supabase
+        .schema("ecom")
+        .from("listings")
+        .update(patch)
+        .eq("id", l.id);
+      if (error) failed++;
+      else ok++;
+    }
+    setBulkUpdating(false);
+    setActionNotice(
+      `Updated ${ok} listing${ok === 1 ? "" : "s"}` +
+        (failed > 0 ? `; ${failed} failed.` : "."),
+    );
+    await loadData();
+  };
+
+  // Count of listings that would be updated by bulkUpdateStale.
+  const staleCount = useMemo(
+    () =>
+      listings.filter(
+        (l) =>
+          l.calculated_price_cents != null &&
+          l.calculated_price_cents !== l.price_cents,
+      ).length,
+    [listings],
+  );
+
+  // Bulk-update only currently selected listings whose price has drifted.
+  // Skips selected rows that are already up-to-date or have no calculated
+  // price; doesn't error on those, they just count as no-ops.
+  const updateSelected = async () => {
+    const targets = listings.filter(
+      (l) =>
+        selectedIds.has(l.id) &&
+        l.calculated_price_cents != null &&
+        l.calculated_price_cents !== l.price_cents,
+    );
+    if (targets.length === 0) {
+      setActionNotice("No selected listings need updating.");
+      return;
+    }
+    setBulkUpdating(true);
+    setActionError(null);
+    setActionNotice(null);
+    let ok = 0;
+    let failed = 0;
+    for (const l of targets) {
+      const patch: Record<string, number | null> = {
+        price_cents: l.calculated_price_cents,
+      };
+      if (l.pricing_mode === "fixed") {
+        patch.fixed_price_cents = l.calculated_price_cents;
+      }
+      const { error } = await supabase
+        .schema("ecom")
+        .from("listings")
+        .update(patch)
+        .eq("id", l.id);
+      if (error) failed++;
+      else ok++;
+    }
+    setBulkUpdating(false);
+    setActionNotice(
+      `Updated ${ok} listing${ok === 1 ? "" : "s"}` +
+        (failed > 0 ? `; ${failed} failed.` : "."),
+    );
+    clearSelection();
+    await loadData();
+  };
+
+  const unlistSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (
+      !window.confirm(
+        `Unlist ${selectedIds.size} listing${
+          selectedIds.size === 1 ? "" : "s"
+        }? The lots return to your unlisted inventory; pricing config is kept.`,
+      )
+    ) {
+      return;
+    }
+    setBulkUnlisting(true);
+    setActionError(null);
+    setActionNotice(null);
+    const ids = Array.from(selectedIds);
+    const { error } = await supabase
+      .schema("ecom")
+      .from("listings")
+      .update({ status: "archived" })
+      .in("id", ids);
+    setBulkUnlisting(false);
+    if (error) {
+      setActionError(`Bulk unlist failed: ${error.message}`);
+      return;
+    }
+    setActionNotice(
+      `Unlisted ${ids.length} listing${ids.length === 1 ? "" : "s"}.`,
+    );
+    clearSelection();
+    await loadData();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -215,19 +385,81 @@ export default function ListingsPage() {
 
   return (
     <div>
-      {/* Header with link to unlisted */}
-      <div className="flex items-center justify-between mb-6">
+      {/* Header with link to unlisted + bulk action */}
+      <div className="flex items-center justify-between mb-6 gap-3">
         <div />
-        <Link
-          href={`/${slug}/manage/unlisted`}
-          className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
-        >
-          Add Listings
-        </Link>
+        <div className="flex items-center gap-2">
+          {staleCount > 0 && (
+            <button
+              type="button"
+              onClick={bulkUpdateStale}
+              disabled={bulkUpdating}
+              className="px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-100 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 rounded-lg disabled:opacity-50"
+              title="Sync every listing whose price has drifted from the current calculated price"
+            >
+              {bulkUpdating
+                ? "Updating…"
+                : `Update ${staleCount} stale price${staleCount === 1 ? "" : "s"}`}
+            </button>
+          )}
+          <Link
+            href={`/${slug}/manage/unlisted`}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
+          >
+            Add Listings
+          </Link>
+        </div>
       </div>
 
+      {actionError && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-300 text-sm">
+          {actionError}
+        </div>
+      )}
+      {actionNotice && (
+        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded text-green-700 dark:text-green-300 text-sm">
+          {actionNotice}
+        </div>
+      )}
+
+      {/* Selection bar — appears when at least one listing is checked */}
+      {selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <button
+            type="button"
+            onClick={updateSelected}
+            disabled={bulkUpdating}
+            className="px-4 py-2 text-sm font-medium text-gray-800 dark:text-gray-100 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 rounded-lg disabled:opacity-50"
+          >
+            {bulkUpdating
+              ? "Updating…"
+              : `Update ${selectedIds.size} selected`}
+          </button>
+          <button
+            type="button"
+            onClick={unlistSelected}
+            disabled={bulkUnlisting}
+            className="px-4 py-2 text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-lg disabled:opacity-50"
+          >
+            {bulkUnlisting
+              ? "Unlisting…"
+              : `Unlist ${selectedIds.size} selected`}
+          </button>
+          <div className="text-sm text-gray-600 dark:text-gray-400">
+            {selectedIds.size} of {rows.length} selected
+          </div>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
         <SummaryCard label="Listings" value={String(totals.totalItems)} />
         <SummaryCard label="Total Cost" value={fmt(totals.totalCost)} />
         <SummaryCard label="Listing Value" value={fmt(totals.totalValue)} />
@@ -253,6 +485,12 @@ export default function ListingsPage() {
                 : undefined
           }
         />
+        <PricingHealthCard
+          under={pricingHealth.under}
+          onTarget={pricingHealth.onTarget}
+          over={pricingHealth.over}
+          tolerancePct={PRICING_TOLERANCE * 100}
+        />
       </div>
 
       {/* Table */}
@@ -271,9 +509,31 @@ export default function ListingsPage() {
           <table className="w-full text-sm text-left">
             <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
               <tr>
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all"
+                    checked={
+                      sortedRows.length > 0 &&
+                      sortedRows.every((r) => selectedIds.has(r.listing.id))
+                    }
+                    onChange={() => {
+                      if (
+                        sortedRows.length > 0 &&
+                        sortedRows.every((r) => selectedIds.has(r.listing.id))
+                      ) {
+                        clearSelection();
+                      } else {
+                        setSelectedIds(
+                          new Set(sortedRows.map((r) => r.listing.id)),
+                        );
+                      }
+                    }}
+                    className="rounded text-red-500 focus:ring-red-500"
+                  />
+                </th>
                 <th className="px-4 py-3"></th>
                 <SortHeader label="Card" sortKey="card" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
-                <SortHeader label="Set" sortKey="set" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Grade" sortKey="grade" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Qty" sortKey="qty" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <th className="px-4 py-3 text-left">Pricing</th>
@@ -297,17 +557,27 @@ export default function ListingsPage() {
                 return (
                   <tr
                     key={r.listing.id}
-                    className={
+                    className={`align-top ${
                       priceStale
                         ? "bg-amber-50 hover:bg-amber-100 dark:bg-amber-900/10 dark:hover:bg-amber-900/20"
                         : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                    }
+                    }`}
                     title={
                       priceStale
                         ? "Listed price differs from the current calculated price"
                         : undefined
                     }
                   >
+                    {/* Selection */}
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${r.listing.card_name ?? "listing"}`}
+                        checked={selectedIds.has(r.listing.id)}
+                        onChange={() => toggleSelection(r.listing.id)}
+                        className="rounded text-red-500 focus:ring-red-500"
+                      />
+                    </td>
                     {/* Image */}
                     <td className="px-4 py-3">
                       {r.listing.image_url ? (
@@ -322,18 +592,17 @@ export default function ListingsPage() {
                         </div>
                       )}
                     </td>
-                    {/* Card */}
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      <ProductLink cardProductId={r.listing.card_product_id} showIcon>
-                        {r.listing.card_name ?? "\u2014"}
-                      </ProductLink>
-                    </td>
-                    {/* Set */}
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.listing.set_name ?? "\u2014"}
+                    {/* Card \u2014 name, #card_number, set */}
+                    <td className="px-4 py-3">
+                      <CardCell
+                        cardProductId={r.listing.card_product_id}
+                        name={r.listing.card_name}
+                        cardNumber={r.listing.card_number}
+                        setName={r.listing.set_name}
+                      />
                     </td>
                     {/* Grade */}
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
+                    <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
                       {gradeLabel(r.listing.grading_service, r.listing.grade)}
                     </td>
                     {/* Qty */}
@@ -373,13 +642,28 @@ export default function ListingsPage() {
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmt(r.listing.market_price_cents)}
                     </td>
-                    {/* Calculated */}
+                    {/* Calculated (+ projected profit at that price) */}
                     <td className={`px-4 py-3 text-right ${
                       r.listing.calculated_price_cents != null && r.listing.price_cents != null && r.listing.calculated_price_cents !== r.listing.price_cents
                         ? "text-amber-600 dark:text-amber-400"
                         : "text-gray-400 dark:text-gray-500"
                     }`}>
-                      {fmt(r.listing.calculated_price_cents)}
+                      <div>{fmt(r.listing.calculated_price_cents)}</div>
+                      {r.calcProfit != null && (
+                        <div
+                          className={`text-xs tabular-nums ${
+                            r.calcProfit > 0
+                              ? "text-green-600 dark:text-green-400"
+                              : r.calcProfit < 0
+                                ? "text-red-600 dark:text-red-400"
+                                : "text-gray-400 dark:text-gray-500"
+                          }`}
+                          title="Profit if sold at the calculated price"
+                        >
+                          {r.calcProfit > 0 ? "+" : ""}
+                          {fmt(r.calcProfit)}
+                        </div>
+                      )}
                     </td>
                     {/* Price — editable */}
                     <td className="px-4 py-3 text-right">
@@ -544,6 +828,53 @@ function SummaryCard({
         className={`mt-1 text-2xl font-bold ${color ?? "text-gray-900 dark:text-gray-100"}`}
       >
         {value}
+      </div>
+    </div>
+  );
+}
+
+function PricingHealthCard({
+  under,
+  onTarget,
+  over,
+  tolerancePct,
+}: {
+  under: number;
+  onTarget: number;
+  over: number;
+  tolerancePct: number;
+}) {
+  const total = under + onTarget + over;
+  return (
+    <div
+      className="bg-white dark:bg-gray-800 rounded-lg shadow p-4"
+      title={`Listings priced relative to calculated price (±${tolerancePct.toFixed(0)}% tolerance)`}
+    >
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+        Pricing health
+      </div>
+      <div className="mt-1 flex items-baseline gap-3 text-sm">
+        <span
+          className="font-bold text-amber-600 dark:text-amber-400 tabular-nums"
+          title="Listed below calculated — room to raise"
+        >
+          ↓{under}
+        </span>
+        <span
+          className="font-bold text-gray-700 dark:text-gray-300 tabular-nums"
+          title={`Within ±${tolerancePct.toFixed(0)}% of calculated`}
+        >
+          ={onTarget}
+        </span>
+        <span
+          className="font-bold text-red-600 dark:text-red-400 tabular-nums"
+          title="Listed above calculated — may be sitting"
+        >
+          ↑{over}
+        </span>
+      </div>
+      <div className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+        of {total} priced
       </div>
     </div>
   );

@@ -9,6 +9,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { resolveMarketValue, type MarketData } from "@/lib/pricing";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // /manage/consignment-intakes/[id] — vendor view of a single intake.
@@ -621,20 +622,13 @@ export default function ConsignmentIntakeDetailPage() {
                             <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded" />
                           )}
                         </td>
-                        <td className="px-3 py-3 text-gray-900 dark:text-gray-100">
-                          <p className="font-medium">
-                            {l.product_name ?? "—"}
-                            {l.card_number && (
-                              <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
-                                #{l.card_number}
-                              </span>
-                            )}
-                          </p>
-                          {l.set_name && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
-                              {l.set_name}
-                            </p>
-                          )}
+                        <td className="px-3 py-3">
+                          <CardCell
+                            cardProductId={l.card_product_id}
+                            name={l.product_name}
+                            cardNumber={l.card_number}
+                            setName={l.set_name}
+                          />
                         </td>
                         <td className="px-3 py-3 text-gray-600 dark:text-gray-400">
                           {gradeLabel(l.grading_service, l.grade)}

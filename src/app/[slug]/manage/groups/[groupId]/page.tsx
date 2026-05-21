@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { gradeLabel } from "@/lib/pricing";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // Group detail — meta edit + two-pane lot assignment
@@ -22,6 +23,7 @@ type GroupRow = {
 
 type LotSummary = {
   lot_id: string;
+  card_product_id: string | null;
   product_name: string | null;
   image_url: string | null;
   set_name: string | null;
@@ -98,7 +100,7 @@ export default function GroupDetailPage() {
         .schema("ecom")
         .from("vendor_inventory_summary")
         .select(
-          "lot_id, product_name, image_url, set_name, card_number, grading_service, grade, quantity_remaining",
+          "lot_id, card_product_id, product_name, image_url, set_name, card_number, grading_service, grade, quantity_remaining",
         )
         .eq("account_id", activeAccountId)
         .order("product_name"),
@@ -342,12 +344,13 @@ export default function GroupDetailPage() {
                     <div className="w-8 h-11 bg-gray-200 dark:bg-gray-600 rounded" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1">
-                      {lot.product_name ?? "—"}
-                    </p>
+                    <CardCell
+                      cardProductId={lot.card_product_id}
+                      name={lot.product_name}
+                      cardNumber={lot.card_number}
+                      setName={lot.set_name}
+                    />
                     <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                      {lot.set_name ?? ""}
-                      {" · "}
                       {gradeLabel(lot.grading_service, lot.grade)}
                       {" · qty "}
                       {lot.quantity_remaining}
@@ -415,12 +418,13 @@ export default function GroupDetailPage() {
                     <div className="w-8 h-11 bg-gray-200 dark:bg-gray-600 rounded" />
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-1">
-                      {lot.product_name ?? "—"}
-                    </p>
+                    <CardCell
+                      cardProductId={lot.card_product_id}
+                      name={lot.product_name}
+                      cardNumber={lot.card_number}
+                      setName={lot.set_name}
+                    />
                     <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
-                      {lot.set_name ?? ""}
-                      {" · "}
                       {gradeLabel(lot.grading_service, lot.grade)}
                       {" · qty "}
                       {lot.quantity_remaining}

@@ -26,6 +26,7 @@ import { formatPrice } from "@/lib/currency";
 
 type ParsedRow = {
   external_id: string | null;
+  shiny_product_id: string | null;
   card_product_id: string | null;
   card_number: string | null;
   set_name: string | null;
@@ -173,6 +174,7 @@ function parseCsv(file: File): Promise<ParsedRow[]> {
         try {
           const rows: ParsedRow[] = results.data.map((r) => ({
             external_id: emptyStr(r.external_id),
+            shiny_product_id: emptyStr(r.shiny_product_id),
             card_product_id: emptyStr(r.card_product_id),
             card_number: emptyStr(r.card_number),
             set_name: emptyStr(r.set_name),

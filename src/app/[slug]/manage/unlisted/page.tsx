@@ -13,7 +13,7 @@ import {
   previewMarketPrice,
   type MarketData,
 } from "@/lib/pricing";
-import ProductLink from "@/components/ProductLink";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -151,7 +151,27 @@ export default function UnlistedPage() {
 
   // Filters & sorting
   const [gradeFilter, setGradeFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<string>("name-asc");
+  type SortKey =
+    | "name"
+    | "grade"
+    | "qty"
+    | "cost"
+    | "market"
+    | "calculated"
+    | "price"
+    | "diff"
+    | "profit";
+  const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
+    key: "name",
+    dir: "asc",
+  });
+  const toggleSort = (key: SortKey) => {
+    setSort((prev) =>
+      prev.key === key
+        ? { key, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { key, dir: key === "name" || key === "grade" ? "asc" : "desc" },
+    );
+  };
 
   // Per-item staged overrides
   const [stagedMap, setStagedMap] = useState<Map<string, StagedListing>>(
@@ -253,7 +273,16 @@ export default function UnlistedPage() {
     `${item.product_id}|${item.grading_service ?? ""}|${item.grade ?? ""}`;
 
   const unlistedItems = useMemo(() => {
-    return items.filter((item) => !listedKeys.has(listingKey(item)));
+    // Hide consigned lots until the consignor has explicitly accepted —
+    // pending/disputed/rejected can't be sold yet, and surfacing them
+    // here invites accidental listings against unconfirmed inventory.
+    // Owned and not-applicable lots (purchases, quick adds) always show.
+    const consignmentReady = (a: CollectionItem["consignor_acceptance"]) =>
+      a == null || a === "not_applicable" || a === "accepted";
+    return items.filter(
+      (item) =>
+        !listedKeys.has(listingKey(item)) && consignmentReady(item.consignor_acceptance),
+    );
   }, [items, listedKeys]);
 
   const gradeOptions = useMemo(() => {
@@ -292,8 +321,22 @@ export default function UnlistedPage() {
       // Match rule
       const matched = matchRule(rules, base);
       const ruleIndex = matched?.index ?? null;
+      const matchedRule = matched?.rule ?? null;
 
-      // Preview price
+      // Calculated — pure rule output, independent of any user-edited override.
+      // Mirrors listing_details.calculated_price_cents on the listed page.
+      const calculatedPriceCents = matchedRule
+        ? previewMarketPrice(
+            costSeller,
+            marketValueUsd,
+            exchangeRate,
+            matchedRule.multiplier,
+            matchedRule.extraCents,
+            matchedRule.roundTo,
+          )
+        : null;
+
+      // Price — staged override if set, otherwise the calculated price.
       let priceCents: number | null;
       if (staged) {
         if (staged.pricingMode === "fixed") {
@@ -305,25 +348,24 @@ export default function UnlistedPage() {
             exchangeRate,
             staged.marketMultiplier ?? 1,
             staged.extraCents ?? 0,
-            staged.marketRoundTo ?? 100
+            staged.marketRoundTo ?? 100,
           );
         }
       } else {
-        priceCents = matched
-          ? previewMarketPrice(
-              costSeller,
-              marketValueUsd,
-              exchangeRate,
-              matched.rule.multiplier,
-              matched.rule.extraCents,
-              matched.rule.roundTo
-            )
-          : null;
+        priceCents = calculatedPriceCents;
       }
 
       const profit =
         priceCents != null && costSeller != null
           ? priceCents - costSeller
+          : null;
+
+      // Diff — calculated − displayed price. Non-zero only when the user
+      // has staged an override that differs from the rule's output. Mirrors
+      // the "Diff" column on the listed page.
+      const diff =
+        calculatedPriceCents != null && priceCents != null
+          ? calculatedPriceCents - priceCents
           : null;
 
       return {
@@ -332,7 +374,10 @@ export default function UnlistedPage() {
         costSeller,
         staged,
         ruleIndex,
+        matchedRule,
+        calculatedPriceCents,
         priceCents,
+        diff,
         profit,
       };
     });
@@ -346,33 +391,46 @@ export default function UnlistedPage() {
     }
 
     // Sort
-    result.sort((a, b) => {
-      switch (sortBy) {
-        case "market-desc":
-          return (b.marketValueUsd ?? 0) - (a.marketValueUsd ?? 0);
-        case "market-asc":
-          return (a.marketValueUsd ?? 0) - (b.marketValueUsd ?? 0);
-        case "name-asc":
-          return a.item.product_name.localeCompare(b.item.product_name);
-        case "name-desc":
-          return b.item.product_name.localeCompare(a.item.product_name);
-        case "cost-desc": {
-          const aCost = a.costSeller ?? 0;
-          const bCost = b.costSeller ?? 0;
-          return bCost - aCost;
-        }
-        case "cost-asc": {
-          const aCost = a.costSeller ?? 0;
-          const bCost = b.costSeller ?? 0;
-          return aCost - bCost;
-        }
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const numKey = (
+      r: (typeof result)[number],
+    ): number => {
+      switch (sort.key) {
+        case "qty":
+          return r.item.quantity;
+        case "cost":
+          return r.costSeller ?? 0;
+        case "market":
+          return r.marketValueUsd ?? 0;
+        case "calculated":
+          return r.calculatedPriceCents ?? 0;
+        case "price":
+          return r.priceCents ?? 0;
+        case "diff":
+          return r.diff ?? 0;
+        case "profit":
+          return r.profit ?? 0;
         default:
           return 0;
       }
+    };
+    result.sort((a, b) => {
+      if (sort.key === "name") {
+        return dir * a.item.product_name.localeCompare(b.item.product_name);
+      }
+      if (sort.key === "grade") {
+        return (
+          dir *
+          gradeLabel(a.item.grading_service, a.item.grade).localeCompare(
+            gradeLabel(b.item.grading_service, b.item.grade),
+          )
+        );
+      }
+      return dir * (numKey(a) - numKey(b));
     });
 
     return result;
-  }, [unlistedItems, marketMap, stagedMap, gradeFilter, sortBy, rules, sellerCurrency, rates, exchangeRate]);
+  }, [unlistedItems, marketMap, stagedMap, gradeFilter, sort, rules, sellerCurrency, rates, exchangeRate]);
 
   // -------------------------------------------------------------------------
   // Summary totals
@@ -381,21 +439,21 @@ export default function UnlistedPage() {
   const totals = useMemo(() => {
     let totalItems = 0;
     let totalCost = 0;
-    let totalMarket = 0;
-    let totalPrice = 0;
+    let totalValue = 0;
     let totalProfit = 0;
+    let totalDiff = 0;
 
     for (const r of rows) {
       const qty = r.item.quantity;
       totalItems += qty;
       if (r.costSeller != null) totalCost += r.costSeller * qty;
-      if (r.marketValueUsd != null) totalMarket += Math.round(r.marketValueUsd * exchangeRate) * qty;
-      if (r.priceCents != null) totalPrice += r.priceCents * qty;
+      if (r.priceCents != null) totalValue += r.priceCents * qty;
       if (r.profit != null) totalProfit += r.profit * qty;
+      if (r.diff != null) totalDiff += r.diff * qty;
     }
 
-    return { totalItems, totalCost, totalMarket, totalPrice, totalProfit };
-  }, [rows, exchangeRate]);
+    return { totalItems, totalCost, totalValue, totalProfit, totalDiff };
+  }, [rows]);
 
   // -------------------------------------------------------------------------
   // Selection
@@ -420,12 +478,6 @@ export default function UnlistedPage() {
 
   const selectedCount = rows.filter((r) =>
     selectedItems.has(r.item.instance_id)
-  ).length;
-
-  const pendingSelectedCount = rows.filter(
-    (r) =>
-      selectedItems.has(r.item.instance_id) &&
-      r.item.consignor_acceptance === "pending",
   ).length;
 
   // -------------------------------------------------------------------------
@@ -526,8 +578,7 @@ export default function UnlistedPage() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <SummaryCard label="Items" value={String(totals.totalItems)} />
         <SummaryCard label="Total Cost" value={fmt(totals.totalCost)} />
-        <SummaryCard label="Market Value" value={fmt(totals.totalMarket)} />
-        <SummaryCard label="List Price" value={fmt(totals.totalPrice)} />
+        <SummaryCard label="Listing Value" value={fmt(totals.totalValue)} />
         <SummaryCard
           label="Profit"
           value={fmt(totals.totalProfit)}
@@ -539,16 +590,18 @@ export default function UnlistedPage() {
                 : undefined
           }
         />
+        <SummaryCard
+          label="Calc − Listed"
+          value={`${totals.totalDiff > 0 ? "+" : ""}${fmt(totals.totalDiff)}`}
+          color={
+            totals.totalDiff > 0
+              ? "text-green-600 dark:text-green-400"
+              : totals.totalDiff < 0
+                ? "text-red-600 dark:text-red-400"
+                : undefined
+          }
+        />
       </div>
-
-      {/* Pending consignor confirmation warning */}
-      {pendingSelectedCount > 0 && (
-        <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded text-amber-800 dark:text-amber-300 text-sm">
-          {pendingSelectedCount} of {selectedCount} selected lot
-          {selectedCount === 1 ? "" : "s"} {pendingSelectedCount === 1 ? "is" : "are"}{" "}
-          awaiting consignor confirmation — list at your own risk.
-        </div>
-      )}
 
       {/* Selection Bar */}
       {selectedCount > 0 && (
@@ -602,23 +655,6 @@ export default function UnlistedPage() {
                   {g}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-              Sort By
-            </span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="mt-1 block w-48 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
-            >
-              <option value="name-asc">Name (A–Z)</option>
-              <option value="name-desc">Name (Z–A)</option>
-              <option value="market-desc">Market (High–Low)</option>
-              <option value="market-asc">Market (Low–High)</option>
-              <option value="cost-desc">Cost (High–Low)</option>
-              <option value="cost-asc">Cost (Low–High)</option>
             </select>
           </label>
         </div>
@@ -799,15 +835,70 @@ export default function UnlistedPage() {
                   />
                 </th>
                 <th className="px-4 py-3"></th>
-                <th className="px-4 py-3">Card</th>
-                <th className="px-4 py-3">Set</th>
-                <th className="px-4 py-3">Grade</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Cost</th>
-                <th className="px-4 py-3 text-right">Market</th>
-                <th className="px-4 py-3 text-center">Rule</th>
-                <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Profit</th>
+                <SortTh
+                  label="Card"
+                  active={sort.key === "name"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("name")}
+                />
+                <SortTh
+                  label="Grade"
+                  active={sort.key === "grade"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("grade")}
+                />
+                <SortTh
+                  label="Qty"
+                  align="right"
+                  active={sort.key === "qty"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("qty")}
+                />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  Pricing
+                </th>
+                <SortTh
+                  label="Cost"
+                  align="right"
+                  active={sort.key === "cost"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("cost")}
+                />
+                <SortTh
+                  label="Market"
+                  align="right"
+                  active={sort.key === "market"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("market")}
+                />
+                <SortTh
+                  label="Calculated"
+                  align="right"
+                  active={sort.key === "calculated"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("calculated")}
+                />
+                <SortTh
+                  label="Price"
+                  align="right"
+                  active={sort.key === "price"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("price")}
+                />
+                <SortTh
+                  label="Diff"
+                  align="right"
+                  active={sort.key === "diff"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("diff")}
+                />
+                <SortTh
+                  label="Profit"
+                  align="right"
+                  active={sort.key === "profit"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("profit")}
+                />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -842,13 +933,13 @@ export default function UnlistedPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      <ProductLink cardProductId={r.item.product_id} showIcon>
-                        {r.item.product_name}
-                      </ProductLink>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.item.set_name}
+                    <td className="px-4 py-3">
+                      <CardCell
+                        cardProductId={r.item.product_id}
+                        name={r.item.product_name}
+                        cardNumber={r.item.card_number}
+                        setName={r.item.set_name}
+                      />
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {gradeLabel(r.item.grading_service, r.item.grade)}
@@ -856,21 +947,50 @@ export default function UnlistedPage() {
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {r.item.quantity}
                     </td>
+                    {/* Pricing — Mkt badge + matched rule params */}
+                    <td className="px-4 py-3">
+                      {r.matchedRule ? (
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                            title={`Rule ${(r.ruleIndex ?? 0) + 1}`}
+                          >
+                            Mkt
+                          </span>
+                          <span className="text-gray-700 dark:text-gray-300 tabular-nums">
+                            &times;{r.matchedRule.multiplier}
+                            <span className="text-gray-400 dark:text-gray-500">
+                              {" "}rd {fmt(r.matchedRule.roundTo)}
+                            </span>
+                            {r.matchedRule.extraCents ? (
+                              <span className="text-gray-400 dark:text-gray-500">
+                                {" "}+{fmt(r.matchedRule.extraCents)}
+                              </span>
+                            ) : null}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">{"—"}</span>
+                      )}
+                    </td>
+                    {/* Cost */}
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmtCost(r.item.purchase_price_cents, r.item.purchase_price_currency)}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmt(r.marketValueUsd != null ? Math.round(r.marketValueUsd * exchangeRate) : null)}
                     </td>
-                    {/* Rule */}
-                    <td className="px-4 py-3 text-center">
-                      {r.ruleIndex != null ? (
-                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 dark:bg-gray-700 text-xs font-bold text-gray-500 dark:text-gray-400">
-                          {r.ruleIndex + 1}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">{"\u2014"}</span>
-                      )}
+                    {/* Calculated \u2014 pure rule output, amber when staged price overrides */}
+                    <td
+                      className={`px-4 py-3 text-right ${
+                        r.calculatedPriceCents != null &&
+                        r.priceCents != null &&
+                        r.calculatedPriceCents !== r.priceCents
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-gray-400 dark:text-gray-500"
+                      }`}
+                    >
+                      {fmt(r.calculatedPriceCents)}
                     </td>
                     {/* Price — live from rules, editable if staged */}
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
@@ -910,10 +1030,25 @@ export default function UnlistedPage() {
                           {fmt(r.priceCents)}
                         </button>
                       ) : (
-                        <span className="text-gray-400">
+                        <span className="text-gray-900 dark:text-gray-100">
                           {fmt(r.priceCents)}
                         </span>
                       )}
+                    </td>
+                    {/* Diff (calculated − price) */}
+                    <td
+                      className={`px-4 py-3 text-right tabular-nums font-medium ${
+                        r.diff != null && r.diff > 0
+                          ? "text-green-600 dark:text-green-400"
+                          : r.diff != null && r.diff < 0
+                            ? "text-red-600 dark:text-red-400"
+                            : "text-gray-400 dark:text-gray-500"
+                      }`}
+                      title="Calculated price − staged price"
+                    >
+                      {r.diff == null
+                        ? "—"
+                        : `${r.diff > 0 ? "+" : ""}${fmt(r.diff)}`}
                     </td>
                     {/* Profit */}
                     <td
@@ -942,6 +1077,43 @@ export default function UnlistedPage() {
 // ---------------------------------------------------------------------------
 // Summary Card
 // ---------------------------------------------------------------------------
+
+function SortTh({
+  label,
+  align = "left",
+  active,
+  dir,
+  onClick,
+}: {
+  label: string;
+  align?: "left" | "right" | "center";
+  active: boolean;
+  dir: "asc" | "desc";
+  onClick: () => void;
+}) {
+  const alignCls =
+    align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
+  const flexJustify =
+    align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start";
+  return (
+    <th className={`px-4 py-3 ${alignCls}`}>
+      <button
+        type="button"
+        onClick={onClick}
+        className={`inline-flex items-center gap-1 ${flexJustify} uppercase text-xs font-medium tracking-wide ${
+          active
+            ? "text-gray-900 dark:text-gray-100"
+            : "text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100"
+        }`}
+      >
+        <span>{label}</span>
+        <span className="text-[10px] leading-none">
+          {active ? (dir === "asc" ? "▲" : "▼") : "↕"}
+        </span>
+      </button>
+    </th>
+  );
+}
 
 function SummaryCard({
   label,

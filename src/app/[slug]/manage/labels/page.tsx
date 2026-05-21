@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -413,8 +414,6 @@ export default function LabelsPage() {
                 </th>
                 <th className="px-4 py-3"></th>
                 <th className="px-4 py-3">Card</th>
-                <th className="px-4 py-3">Number</th>
-                <th className="px-4 py-3">Set</th>
                 <th className="px-4 py-3">Rarity</th>
                 <th className="px-4 py-3">Grade</th>
                 <th className="px-4 py-3 text-right">Qty</th>
@@ -451,14 +450,13 @@ export default function LabelsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      {r.listing.card_name ?? "\u2014"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.listing.card_number ?? "\u2014"}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.listing.set_name ?? "\u2014"}
+                    <td className="px-4 py-3">
+                      <CardCell
+                        cardProductId={r.listing.card_product_id}
+                        name={r.listing.card_name}
+                        cardNumber={r.listing.card_number}
+                        setName={r.listing.set_name}
+                      />
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {r.listing.rarity ?? "\u2014"}
