@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useLinkedAccounts, useLinkAccount, useUnlinkAccount } from "@/hooks/useLinkedAccounts";
@@ -98,6 +99,12 @@ export default function AccountsPage() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Link
+                    href={`/${slug}/manage/accounts/${account.id}/sold`}
+                    className="px-3 py-2 text-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium"
+                  >
+                    View sold
+                  </Link>
                   <button
                     type="button"
                     onClick={() => handleImport(account.handle)}
