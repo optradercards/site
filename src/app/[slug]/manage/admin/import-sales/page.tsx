@@ -11,7 +11,7 @@ import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
-// /[slug]/manage/inventory/import-sales
+// /[slug]/manage/admin/import-sales
 //
 // Generic completed-sales importer from a CSV. Parses client-side with
 // papaparse, posts the rows to the sales-import edge function for catalog

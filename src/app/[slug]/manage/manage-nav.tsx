@@ -98,13 +98,21 @@ function buildNavItems(isTrader: boolean): NavItem[] {
         { href: "/manage/unlisted", label: "List Items", icon: "🏷️" },
         { href: "/manage/listings", label: "Listings", icon: "📋" },
         { href: "/manage/sell", label: "Sell", icon: "💰" },
+        { href: "/manage/sales", label: "Sales", icon: "📈" },
         { href: "/manage/labels", label: "Labels", icon: "🖨️" },
+      ],
+    });
+    items.push({
+      label: "Admin",
+      icon: "⚙️",
+      children: [
+        { href: "/manage/admin/import-sales", label: "Import sales", icon: "📤" },
+        { href: "/manage/admin/reconcile", label: "Reconcile", icon: "🔁" },
       ],
     });
   }
 
   const settingsChildren: NavItem[] = [
-    { href: "/manage/accounts", label: "Accounts", icon: "🔗" },
     { href: "/manage/plan", label: "Plan", icon: "💳" },
     { href: "/manage/support", label: "Support", icon: "🎧" },
   ];
