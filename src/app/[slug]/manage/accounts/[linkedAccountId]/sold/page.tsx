@@ -98,24 +98,50 @@ export default function ShinySoldImportPage() {
 
   const [filter, setFilter] = useState<"all" | PreviewStatus>("all");
 
+  const invokeShinySold = useCallback(
+    async (mode: "preview" | "import") => {
+      const { data, error: invErr } = await supabase.functions.invoke(
+        "shiny-sold",
+        { body: { mode, linked_account_id: linkedAccountId } },
+      );
+      if (invErr) {
+        // FunctionsHttpError exposes the Response on .context — parse it
+        // for the real server message.
+        const ctx = (invErr as unknown as { context?: Response }).context;
+        if (ctx && typeof ctx.text === "function") {
+          try {
+            const text = await ctx.text();
+            try {
+              const parsed = JSON.parse(text);
+              throw new Error(parsed.error ?? text);
+            } catch {
+              throw new Error(text);
+            }
+          } catch (parseErr) {
+            if (parseErr instanceof Error) throw parseErr;
+          }
+        }
+        throw invErr;
+      }
+      const body = data as { error?: string } & Record<string, unknown>;
+      if (body && body.error) throw new Error(body.error);
+      return body;
+    },
+    [supabase, linkedAccountId],
+  );
+
   const fetchPreview = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const { data, error: invErr } = await supabase.functions.invoke(
-        "shiny-sold",
-        { body: { mode: "preview", linked_account_id: linkedAccountId } },
-      );
-      if (invErr) throw invErr;
-      const body = data as PreviewResponse | { error: string };
-      if ("error" in body) throw new Error(body.error);
+      const body = (await invokeShinySold("preview")) as unknown as PreviewResponse;
       setPreview(body);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load preview");
     } finally {
       setLoading(false);
     }
-  }, [supabase, linkedAccountId]);
+  }, [invokeShinySold]);
 
   useEffect(() => {
     if (linkedAccountId) void fetchPreview();
@@ -126,13 +152,7 @@ export default function ShinySoldImportPage() {
     setError(null);
     setLastImport(null);
     try {
-      const { data, error: invErr } = await supabase.functions.invoke(
-        "shiny-sold",
-        { body: { mode: "import", linked_account_id: linkedAccountId } },
-      );
-      if (invErr) throw invErr;
-      const body = data as ImportResponse | { error: string };
-      if ("error" in body) throw new Error(body.error);
+      const body = (await invokeShinySold("import")) as unknown as ImportResponse;
       setLastImport(body);
       await fetchPreview();
     } catch (e) {
