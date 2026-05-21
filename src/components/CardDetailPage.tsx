@@ -15,13 +15,14 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
+import {
+  usePriceHistory,
+  type PriceHistoryRange,
+} from "@/hooks/usePriceHistory";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import ProductBadges from "@/components/ProductBadges";
-import type {
-  CardWithDetails,
-  PriceHistoryEntry,
-} from "@/types/cardDetail";
+import type { CardWithDetails } from "@/types/cardDetail";
 
 type ProductListing = {
   id: string;
@@ -48,6 +49,13 @@ const CHART_COLORS = [
   "#f97316", // orange
 ];
 
+const RANGE_OPTIONS: { key: PriceHistoryRange; label: string }[] = [
+  { key: "7d", label: "7D" },
+  { key: "30d", label: "30D" },
+  { key: "90d", label: "90D" },
+  { key: "all", label: "All" },
+];
+
 export default function CardDetailPage() {
   const params = useParams();
   const cardId = params?.id as string;
@@ -58,10 +66,13 @@ export default function CardDetailPage() {
   const rates = exchangeRates ?? {};
 
   const [card, setCard] = useState<CardWithDetails | null>(null);
-  const [priceHistory, setPriceHistory] = useState<PriceHistoryEntry[]>([]);
   const [listings, setListings] = useState<ProductListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [range, setRange] = useState<PriceHistoryRange>("30d");
+
+  const { data: priceHistory = [], isFetching: priceHistoryFetching } =
+    usePriceHistory(cardId, range);
 
   useEffect(() => {
     if (!cardId) return;
@@ -70,20 +81,13 @@ export default function CardDetailPage() {
       setLoading(true);
       setError(null);
 
-      const [cardResult, historyResult, listingsResult] = await Promise.all([
+      const [cardResult, listingsResult] = await Promise.all([
         supabase
           .schema("cards")
           .from("products_with_details")
           .select("*")
           .eq("id", cardId)
           .single(),
-        supabase
-          .schema("cards")
-          .from("price_history")
-          .select("*")
-          .eq("product_id", cardId)
-          .order("recorded_date", { ascending: false })
-          .limit(50),
         supabase
           .schema("ecom")
           .from("storefront_listings")
@@ -102,7 +106,6 @@ export default function CardDetailPage() {
       }
 
       setCard(cardResult.data as CardWithDetails);
-      setPriceHistory((historyResult.data ?? []) as PriceHistoryEntry[]);
       setListings((listingsResult.data ?? []) as ProductListing[]);
       setLoading(false);
     }
@@ -110,9 +113,10 @@ export default function CardDetailPage() {
     fetchData();
   }, [cardId, supabase]);
 
-  // Build chart data: one row per date, one key per condition (converted)
-  const { chartData, conditions } = useMemo(() => {
-    if (priceHistory.length === 0) return { chartData: [], conditions: [] };
+  // Build chart data + per-condition summary stats
+  const { chartData, conditions, summary } = useMemo(() => {
+    if (priceHistory.length === 0)
+      return { chartData: [], conditions: [], summary: [] };
 
     const rateKey = currency.toLowerCase();
     const rate = rateKey === "usd" ? 1 : (rates[rateKey] ?? 1);
@@ -120,16 +124,43 @@ export default function CardDetailPage() {
     const conditionSet = new Set<string>();
     const byDate = new Map<string, Record<string, number>>();
 
+    // Track first (oldest) and latest entry per condition + high/low in cents
+    const stats = new Map<
+      string,
+      {
+        latestCents: number;
+        firstCents: number;
+        highCents: number;
+        lowCents: number;
+      }
+    >();
+
     // priceHistory is sorted desc — iterate in reverse for chronological order
     for (let i = priceHistory.length - 1; i >= 0; i--) {
       const entry = priceHistory[i];
+      const cents = entry.price_cents;
       conditionSet.add(entry.condition);
+
       let row = byDate.get(entry.recorded_date);
       if (!row) {
         row = {};
         byDate.set(entry.recorded_date, row);
       }
-      row[entry.condition] = (entry.price_cents / 100) * rate;
+      row[entry.condition] = (cents / 100) * rate;
+
+      const s = stats.get(entry.condition);
+      if (!s) {
+        stats.set(entry.condition, {
+          firstCents: cents,
+          latestCents: cents,
+          highCents: cents,
+          lowCents: cents,
+        });
+      } else {
+        s.latestCents = cents;
+        if (cents > s.highCents) s.highCents = cents;
+        if (cents < s.lowCents) s.lowCents = cents;
+      }
     }
 
     const conditions = Array.from(conditionSet);
@@ -138,7 +169,22 @@ export default function CardDetailPage() {
       ...values,
     }));
 
-    return { chartData, conditions };
+    const summary = conditions.map((condition) => {
+      const s = stats.get(condition)!;
+      const changePct =
+        s.firstCents > 0
+          ? ((s.latestCents - s.firstCents) / s.firstCents) * 100
+          : null;
+      return {
+        condition,
+        latestCents: s.latestCents,
+        highCents: s.highCents,
+        lowCents: s.lowCents,
+        changePct,
+      };
+    });
+
+    return { chartData, conditions, summary };
   }, [priceHistory, currency, rates]);
 
   if (loading) {
@@ -496,19 +542,102 @@ export default function CardDetailPage() {
 
       {/* Price History */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            Price History
-          </h2>
+        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-white">
+              Price History
+            </h2>
+            {priceHistoryFetching && (
+              <span
+                className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-gray-400 border-r-transparent"
+                aria-label="Loading"
+              />
+            )}
+          </div>
+          <div
+            role="group"
+            aria-label="Time range"
+            className="inline-flex rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 p-0.5"
+          >
+            {RANGE_OPTIONS.map((opt) => {
+              const active = opt.key === range;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setRange(opt.key)}
+                  aria-pressed={active}
+                  className={
+                    active
+                      ? "px-2.5 py-1 text-xs font-semibold rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm"
+                      : "px-2.5 py-1 text-xs font-medium rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
+                  }
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
         {priceHistory.length === 0 ? (
           <p className="px-6 py-6 text-sm text-gray-500 dark:text-gray-400">
-            No price history recorded.
+            {priceHistoryFetching
+              ? "Loading price history…"
+              : "No price data in the selected range."}
           </p>
         ) : (
-          <>
+          <div>
+            {/* Per-condition summary cards */}
+            <div className="px-6 pt-6 pb-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {summary.map((s, i) => {
+                  const color = CHART_COLORS[i % CHART_COLORS.length];
+                  const up = s.changePct != null && s.changePct >= 0;
+                  return (
+                    <div
+                      key={s.condition}
+                      className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30 px-4 py-3"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="inline-block w-2 h-2 rounded-full"
+                          style={{ backgroundColor: color }}
+                          aria-hidden
+                        />
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400">
+                          {s.condition}
+                        </p>
+                      </div>
+                      <p className="text-lg font-semibold text-gray-900 dark:text-white mt-1">
+                        {formatPrice(s.latestCents, currency, rates)}
+                      </p>
+                      {s.changePct != null && (
+                        <p
+                          className={
+                            up
+                              ? "text-xs font-medium text-green-600 dark:text-green-400 mt-0.5"
+                              : "text-xs font-medium text-red-600 dark:text-red-400 mt-0.5"
+                          }
+                        >
+                          {up ? "▲" : "▼"} {up ? "+" : ""}
+                          {s.changePct.toFixed(1)}%
+                        </p>
+                      )}
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1.5">
+                        H {formatPrice(s.highCents, currency, rates)}
+                        <span className="mx-1 text-gray-300 dark:text-gray-600">
+                          ·
+                        </span>
+                        L {formatPrice(s.lowCents, currency, rates)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Chart */}
-            <div className="px-6 pt-4 pb-2">
+            <div className="px-6 pt-4 pb-6">
               <div className="h-72">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData}>
@@ -569,43 +698,7 @@ export default function CardDetailPage() {
                 </ResponsiveContainer>
               </div>
             </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto border-t border-gray-200 dark:border-gray-700">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
-                    <th className="px-6 py-3">Date</th>
-                    <th className="px-6 py-3">Condition</th>
-                    <th className="px-6 py-3">Price</th>
-                  </tr>
-                </thead>
-                <tbody className="text-gray-700 dark:text-gray-300">
-                  {priceHistory.map((entry) => (
-                    <tr
-                      key={entry.id}
-                      className="border-b border-gray-100 dark:border-gray-700/50"
-                    >
-                      <td className="px-6 py-2">
-                        {new Date(entry.recorded_date).toLocaleDateString(
-                          "en-US",
-                          {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          }
-                        )}
-                      </td>
-                      <td className="px-6 py-2">{entry.condition}</td>
-                      <td className="px-6 py-2">
-                        {formatPrice(entry.price_cents, currency, rates)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
+          </div>
         )}
       </div>
 
