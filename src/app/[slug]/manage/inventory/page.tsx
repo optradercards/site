@@ -9,7 +9,7 @@ import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { useProfile } from "@/hooks/useProfile";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel, resolveMarketValue, type MarketData } from "@/lib/pricing";
-import ProductLink from "@/components/ProductLink";
+import CardCell from "@/components/CardCell";
 
 // ---------------------------------------------------------------------------
 // Inventory list — one row per ecom.inventory_lot
@@ -146,6 +146,18 @@ export default function InventoryPage() {
   const [consignedOnly, setConsignedOnly] = useState(false);
   const [listedMode, setListedMode] = useState<"all" | "listed" | "unlisted">("all");
 
+  type SortCol = "card" | "grade" | "qty" | "cost" | "market" | "source";
+  const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
+    null,
+  );
+  const toggleSort = (col: SortCol) => {
+    setSort((prev) => {
+      if (!prev || prev.col !== col) return { col, dir: "asc" };
+      if (prev.dir === "asc") return { col, dir: "desc" };
+      return null;
+    });
+  };
+
   const loadData = useCallback(async () => {
     if (!activeAccountId) return;
     setLoading(true);
@@ -280,6 +292,59 @@ export default function InventoryPage() {
     });
   }, [rows, sourceFilter, consignedOnly, search, listedMode, listedKeys]);
 
+  const sortedRows = useMemo(() => {
+    if (!sort) return filteredRows;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const marketUsdFor = (r: InventoryRow): number | null =>
+      resolveMarketValue(
+        {
+          product_id: r.card_product_id ?? "",
+          price_ungraded: r.price_ungraded,
+          price_psa_1: r.price_psa_1,
+          price_psa_2: r.price_psa_2,
+          price_psa_3: r.price_psa_3,
+          price_psa_4: r.price_psa_4,
+          price_psa_5: r.price_psa_5,
+          price_psa_6: r.price_psa_6,
+          price_psa_7: r.price_psa_7,
+          price_psa_8: r.price_psa_8,
+          price_psa_9: r.price_psa_9,
+          price_psa_10: r.price_psa_10,
+          price_psa_9_5: r.price_psa_9_5,
+          price_bgs: r.price_bgs,
+          price_cgc: r.price_cgc,
+        } as MarketData,
+        r.grading_service,
+        r.grade,
+      );
+    const getKey = (r: InventoryRow): string | number | null => {
+      switch (sort.col) {
+        case "card":
+          return (r.product_name ?? "").toLowerCase();
+        case "grade":
+          return gradeLabel(r.grading_service, r.grade).toLowerCase();
+        case "qty":
+          return r.quantity_remaining;
+        case "cost":
+          return r.acquisition_cost_cents;
+        case "market":
+          return marketUsdFor(r);
+        case "source":
+          return r.acquisition_source;
+      }
+    };
+    return [...filteredRows].sort((a, b) => {
+      const av = getKey(a);
+      const bv = getKey(b);
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+  }, [filteredRows, sort]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -302,12 +367,20 @@ export default function InventoryPage() {
             </Link>
           )}
         </div>
-        <Link
-          href={`/${slug}/manage/inventory/receive?mode=purchase`}
-          className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
-        >
-          Record purchase
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/${slug}/manage/inventory/import-sales`}
+            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600"
+          >
+            Import sales (CSV)
+          </Link>
+          <Link
+            href={`/${slug}/manage/inventory/receive?mode=purchase`}
+            className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
+          >
+            Record purchase
+          </Link>
+        </div>
       </div>
 
       {/* Filters */}
@@ -383,20 +456,19 @@ export default function InventoryPage() {
             <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
               <tr>
                 <th className="px-4 py-3"></th>
-                <th className="px-4 py-3">Card</th>
-                <th className="px-4 py-3">Set</th>
-                <th className="px-4 py-3">Grade</th>
-                <th className="px-4 py-3 text-right">Qty</th>
-                <th className="px-4 py-3 text-right">Cost / unit</th>
-                <th className="px-4 py-3 text-right">Market ref</th>
-                <th className="px-4 py-3">Source</th>
+                <SortTh col="card" align="left" sort={sort} onToggle={toggleSort}>Card</SortTh>
+                <SortTh col="grade" align="left" sort={sort} onToggle={toggleSort}>Grade</SortTh>
+                <SortTh col="qty" align="right" sort={sort} onToggle={toggleSort}>Qty</SortTh>
+                <SortTh col="cost" align="right" sort={sort} onToggle={toggleSort}>Cost / unit</SortTh>
+                <SortTh col="market" align="right" sort={sort} onToggle={toggleSort}>Market ref</SortTh>
+                <SortTh col="source" align="left" sort={sort} onToggle={toggleSort}>Source</SortTh>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Groups</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-              {filteredRows.map((r) => {
+              {sortedRows.map((r) => {
                 const marketUsd = resolveMarketValue(
                   {
                     product_id: r.card_product_id ?? "",
@@ -427,7 +499,7 @@ export default function InventoryPage() {
                 return (
                   <tr
                     key={r.lot_id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/50"
                   >
                     <td className="px-4 py-3">
                       {r.image_url ? (
@@ -443,30 +515,33 @@ export default function InventoryPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-medium text-gray-900 dark:text-gray-100">
-                      <ProductLink cardProductId={r.card_product_id} showIcon>
-                        {r.product_name ?? "—"}
-                      </ProductLink>
-                      {r.card_number && (
-                        <span className="ml-2 text-xs text-gray-400">#{r.card_number}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
-                      {r.set_name ?? "—"}
+                    <td className="px-4 py-3">
+                      <CardCell
+                        cardProductId={r.card_product_id}
+                        name={r.product_name}
+                        cardNumber={r.card_number}
+                        setName={r.set_name}
+                      />
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {gradeLabel(r.grading_service, r.grade)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100 tabular-nums">
-                      {r.quantity_remaining}
-                      <span className="text-xs text-gray-400"> / {r.quantity_acquired}</span>
+                    <td className="px-4 py-3 text-right tabular-nums align-top">
+                      <div className="text-gray-900 dark:text-gray-100">
+                        {r.quantity_remaining}
+                      </div>
+                      {r.quantity_acquired !== r.quantity_remaining && (
+                        <div className="text-xs text-gray-400">
+                          of {r.quantity_acquired}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100 tabular-nums">
                       {fmtCost(r.acquisition_cost_cents, r.acquisition_currency)}
                     </td>
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100 tabular-nums">
                       {marketUsd != null
-                        ? formatPrice(Math.round(marketUsd * 100), sellerCurrency, rates, "USD")
+                        ? formatPrice(marketUsd, sellerCurrency, rates, "USD")
                         : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs">
@@ -541,5 +616,41 @@ export default function InventoryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function SortTh<T extends string>({
+  col,
+  align,
+  sort,
+  onToggle,
+  children,
+}: {
+  col: T;
+  align: "left" | "right";
+  sort: { col: T; dir: "asc" | "desc" } | null;
+  onToggle: (col: T) => void;
+  children: React.ReactNode;
+}) {
+  const active = sort?.col === col;
+  const arrow = active ? (sort!.dir === "asc" ? "▲" : "▼") : "↕";
+  return (
+    <th
+      className={`px-4 py-3 ${align === "right" ? "text-right" : "text-left"}`}
+    >
+      <button
+        type="button"
+        onClick={() => onToggle(col)}
+        className="inline-flex items-center gap-1 uppercase text-xs font-semibold hover:text-gray-900 dark:hover:text-white"
+      >
+        {children}
+        <span
+          className={`text-[10px] ${active ? "opacity-100" : "opacity-40"}`}
+          aria-hidden
+        >
+          {arrow}
+        </span>
+      </button>
+    </th>
   );
 }
