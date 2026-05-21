@@ -73,7 +73,7 @@ export default function SiteHeader() {
     "Account";
 
   return (
-    <header className="bg-gray-800 dark:bg-gray-950 text-white shadow-lg sticky top-0 z-50">
+    <header className="bg-gray-800 dark:bg-gray-950 text-white shadow-lg relative z-50">
       {/* Top Bar - hidden on mobile */}
       <div className="hidden md:block bg-gray-900 dark:bg-black border-b border-gray-700 dark:border-gray-800">
         <div className="container mx-auto px-4 flex items-center justify-between py-1.5 text-xs">
@@ -376,7 +376,7 @@ export default function SiteHeader() {
                                     fromRate
                                 );
                               }, 0);
-                              return `${symbol}${(total / 100).toFixed(2)}`;
+                              return `${symbol}${(total / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                             })()}
                           </span>
                         </div>

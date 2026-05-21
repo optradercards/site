@@ -234,7 +234,7 @@ export const CardPicker = forwardRef<CardPickerHandle, Props>(function CardPicke
                       Market
                     </p>
                     <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                      ${(c.price_ungraded / 100).toFixed(2)}
+                      ${(c.price_ungraded / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                 )}

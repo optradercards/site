@@ -104,7 +104,7 @@ export default function MarketplaceSection({
                     <span>{card.type}</span>
                   </div>
                   {card.power && <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">Power: {card.power}</div>}
-                  <div className="text-xl md:text-2xl font-bold text-red-500 mb-3">${card.price.toFixed(2)}</div>
+                  <div className="text-xl md:text-2xl font-bold text-red-500 mb-3">${card.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                   <div className="flex gap-2">
                     <button
                       onClick={(e) => {

@@ -178,7 +178,7 @@ export default function ManageOverviewPage() {
               >
                 {portfolioDelta.abs >= 0 ? "+" : ""}
                 {displaySymbol}
-                {Math.abs(portfolioDelta.abs).toFixed(2)}
+                {Math.abs(portfolioDelta.abs).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {portfolioDelta.abs >= 0 ? "+" : ""}
@@ -223,7 +223,7 @@ export default function ManageOverviewPage() {
                 formatter={(value) => {
                   const n = typeof value === "number" ? value : Number(value);
                   return Number.isFinite(n)
-                    ? `${displaySymbol}${n.toFixed(2)}`
+                    ? `${displaySymbol}${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     : "—";
                 }}
                 labelFormatter={(d) =>

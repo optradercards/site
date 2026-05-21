@@ -30,7 +30,13 @@ const STATUS_PILL: Record<TxStatus, string> = {
 };
 
 function formatPrice(cents: number | null): string {
-  return cents == null ? "—" : "$" + (cents / 100).toFixed(2);
+  return cents == null
+    ? "—"
+    : "$" +
+        (cents / 100).toLocaleString("en-US", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
 }
 
 function buyerLabel(row: OrderRow): string {

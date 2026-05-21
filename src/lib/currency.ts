@@ -56,5 +56,9 @@ export function formatPrice(
   const info = SUPPORTED_CURRENCIES.find((c) => c.code === currency);
   const symbol = info?.symbol ?? "$";
 
-  return symbol + converted.toFixed(2);
+  const formatted = converted.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return symbol + formatted;
 }

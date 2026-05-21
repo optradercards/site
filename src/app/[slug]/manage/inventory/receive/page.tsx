@@ -58,6 +58,8 @@ type LineItem = {
   cardProductId: string | null;
   customDraft: CustomDraft | null;
   cardName: string;
+  cardNumber: string | null;
+  setName: string | null;
   imageUrl: string | null;
   market: MarketSnapshot | null;
   gradingService: GradingService;
@@ -137,6 +139,8 @@ function newLine(picked: PickedCard, source: AcquisitionSource = "purchase"): Li
       cardProductId: null,
       customDraft: { name: "", set_label: "", brand_label: "", image_url: "" },
       cardName: "",
+      cardNumber: null,
+      setName: null,
       imageUrl: null,
       market: null,
       gradingService: "ungraded",
@@ -169,6 +173,8 @@ function newLine(picked: PickedCard, source: AcquisitionSource = "purchase"): Li
     cardProductId: picked.card.id,
     customDraft: null,
     cardName: picked.card.name,
+    cardNumber: picked.card.card_number,
+    setName: picked.card.set_name,
     imageUrl: picked.card.image_url,
     market,
     gradingService: "ungraded",
@@ -783,13 +789,25 @@ function ProductCell({
         ) : (
           <div className="w-8 h-11 bg-gray-200 dark:bg-gray-600 rounded shrink-0" />
         )}
-        <ProductLink
-          cardProductId={line.cardProductId}
-          showIcon
-          className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2"
-        >
-          {line.cardName}
-        </ProductLink>
+        <div className="min-w-0">
+          <ProductLink
+            cardProductId={line.cardProductId}
+            showIcon
+            className="text-sm font-medium text-gray-900 dark:text-gray-100 line-clamp-2"
+          >
+            {line.cardName}
+            {line.cardNumber && (
+              <span className="text-gray-500 dark:text-gray-400 font-normal ml-1">
+                #{line.cardNumber}
+              </span>
+            )}
+          </ProductLink>
+          {line.setName && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+              {line.setName}
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -974,6 +992,8 @@ function ConsignmentMode({ slug }: { slug: string }) {
               image_url: "",
             },
             cardName: saved.customDraft?.name ?? "",
+            cardNumber: null,
+            setName: saved.customDraft?.set_label || null,
             imageUrl: saved.customDraft?.image_url || null,
             market: null,
             gradingService: saved.gradingService,
@@ -992,6 +1012,8 @@ function ConsignmentMode({ slug }: { slug: string }) {
           cardProductId: saved.cardProductId,
           customDraft: null,
           cardName: p?.name ?? "(card not found)",
+          cardNumber: p?.card_number ?? null,
+          setName: p?.set_name ?? null,
           imageUrl: p?.image_url ?? null,
           market: p
             ? {
@@ -1421,11 +1443,17 @@ function ConsignmentMode({ slug }: { slug: string }) {
 
       {/* Line items */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Cards received ({lines.length})
-          </h2>
-          <span className="text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex items-start justify-between mb-2 gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              Cards received ({lines.length})
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Market price shown is a catalog reference and is not the sale
+              price — the final price is set when the item is listed.
+            </p>
+          </div>
+          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap mt-1">
             Type to search, &uarr;/&darr; to navigate, Enter to add
           </span>
         </div>

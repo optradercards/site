@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { fetchExchangeRates, formatPrice } from "@/lib/currency";
+import { resolveMarketValue, type MarketData } from "@/lib/pricing";
 import ConfirmIntakeClient from "./confirm-client";
 
 // ---------------------------------------------------------------------------
@@ -23,6 +25,45 @@ type IntakeLot = {
   consignor_dispute_notes: string | null;
   consignor_split_pct: number | null;
   consignor_chargeback_per_unit_cents: number | null;
+  price_ungraded: number | null;
+  price_psa_1: number | null;
+  price_psa_2: number | null;
+  price_psa_3: number | null;
+  price_psa_4: number | null;
+  price_psa_5: number | null;
+  price_psa_6: number | null;
+  price_psa_7: number | null;
+  price_psa_8: number | null;
+  price_psa_9: number | null;
+  price_psa_9_5: number | null;
+  price_psa_10: number | null;
+  price_bgs: number | null;
+  price_cgc: number | null;
+};
+
+export type IntakeLotForClient = Omit<
+  IntakeLot,
+  | "price_ungraded"
+  | "price_psa_1"
+  | "price_psa_2"
+  | "price_psa_3"
+  | "price_psa_4"
+  | "price_psa_5"
+  | "price_psa_6"
+  | "price_psa_7"
+  | "price_psa_8"
+  | "price_psa_9"
+  | "price_psa_9_5"
+  | "price_psa_10"
+  | "price_bgs"
+  | "price_cgc"
+> & {
+  market_usd_cents: number | null;
+  total_usd_cents: number | null;
+  share_usd_cents: number | null;
+  market_display: string | null;
+  total_display: string | null;
+  share_display: string | null;
 };
 
 type IntakePayload = {
@@ -64,9 +105,80 @@ export default async function ConsignorConfirmPage({
   const { intake, lots } = payload;
   const already = intake.acknowledged_at !== null;
 
+  const rates = await fetchExchangeRates(supabase);
+  const displayCurrency = "AUD";
+  let grandTotalUsd: number | null = null;
+  let grandShareUsd: number | null = null;
+  const lotsForClient: IntakeLotForClient[] = lots.map((l) => {
+    const market: MarketData = {
+      product_id: "",
+      price_ungraded: l.price_ungraded,
+      price_psa_1: l.price_psa_1,
+      price_psa_2: l.price_psa_2,
+      price_psa_3: l.price_psa_3,
+      price_psa_4: l.price_psa_4,
+      price_psa_5: l.price_psa_5,
+      price_psa_6: l.price_psa_6,
+      price_psa_7: l.price_psa_7,
+      price_psa_8: l.price_psa_8,
+      price_psa_9: l.price_psa_9,
+      price_psa_9_5: l.price_psa_9_5,
+      price_psa_10: l.price_psa_10,
+      price_bgs: l.price_bgs,
+      price_cgc: l.price_cgc,
+    };
+    const usd = resolveMarketValue(market, l.grading_service, l.grade);
+    const totalUsd = usd != null ? usd * l.quantity_acquired : null;
+    const shareUsd =
+      totalUsd != null && l.consignor_split_pct != null
+        ? Math.round((totalUsd * Number(l.consignor_split_pct)) / 100)
+        : null;
+    if (totalUsd != null) {
+      grandTotalUsd = (grandTotalUsd ?? 0) + totalUsd;
+    }
+    if (shareUsd != null) {
+      grandShareUsd = (grandShareUsd ?? 0) + shareUsd;
+    }
+    return {
+      id: l.id,
+      card_name: l.card_name,
+      card_image_url: l.card_image_url,
+      card_number: l.card_number,
+      set_name: l.set_name,
+      grading_service: l.grading_service,
+      grade: l.grade,
+      quantity_acquired: l.quantity_acquired,
+      consignor_acceptance: l.consignor_acceptance,
+      consignor_dispute_notes: l.consignor_dispute_notes,
+      consignor_split_pct: l.consignor_split_pct,
+      consignor_chargeback_per_unit_cents: l.consignor_chargeback_per_unit_cents,
+      market_usd_cents: usd,
+      total_usd_cents: totalUsd,
+      share_usd_cents: shareUsd,
+      market_display:
+        usd != null ? formatPrice(usd, displayCurrency, rates, "USD") : null,
+      total_display:
+        totalUsd != null
+          ? formatPrice(totalUsd, displayCurrency, rates, "USD")
+          : null,
+      share_display:
+        shareUsd != null
+          ? formatPrice(shareUsd, displayCurrency, rates, "USD")
+          : null,
+    };
+  });
+  const grandTotalDisplay =
+    grandTotalUsd != null
+      ? formatPrice(grandTotalUsd, displayCurrency, rates, "USD")
+      : null;
+  const grandShareDisplay =
+    grandShareUsd != null
+      ? formatPrice(grandShareUsd, displayCurrency, rates, "USD")
+      : null;
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 py-10 px-4">
-      <div className="max-w-3xl mx-auto">
+      <div className="max-w-6xl mx-auto">
         <div className="mb-6">
           <Link href="/" className="text-sm text-red-500 hover:text-red-600">
             OP Trader
@@ -136,7 +248,12 @@ export default async function ConsignorConfirmPage({
             </p>
           </div>
         ) : (
-          <ConfirmIntakeClient token={token} lots={lots} />
+          <ConfirmIntakeClient
+            token={token}
+            lots={lotsForClient}
+            grandTotalDisplay={grandTotalDisplay}
+            grandShareDisplay={grandShareDisplay}
+          />
         )}
       </div>
     </div>

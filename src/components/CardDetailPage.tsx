@@ -251,7 +251,7 @@ export default function CardDetailPage() {
     card.price_ungraded != null || psaGrades.length > 0 || otherGrades.length > 0;
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+    <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       <Breadcrumbs
         items={[
           { label: "Products", href: "/products" },
@@ -263,23 +263,27 @@ export default function CardDetailPage() {
             label: card.set_name,
             href: `/products?brand=${encodeURIComponent(card.brand_name)}&set=${encodeURIComponent(card.set_name)}`,
           },
-          { label: card.name },
+          {
+            label: card.card_number
+              ? `${card.name} #${card.card_number}`
+              : card.name,
+          },
         ]}
       />
 
-      {/* Hero */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 lg:items-start">
+        {/* Left rail */}
+        <aside className="lg:sticky lg:top-6 lg:self-start space-y-4">
           {/* Images */}
-          <div className="flex gap-4 items-start min-w-0">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-3">
             {card.image_url ? (
               <img
                 src={card.image_url}
                 alt={card.name}
-                className="max-w-[50%] shrink rounded-lg object-contain"
+                className="w-full rounded-lg object-contain"
               />
             ) : (
-              <div className="max-w-[50%] shrink h-80 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
+              <div className="w-full h-80 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">
                 No image
               </div>
             )}
@@ -287,121 +291,130 @@ export default function CardDetailPage() {
               <img
                 src={card.back_image_url}
                 alt={`${card.name} (back)`}
-                className="max-w-[50%] shrink rounded-lg object-contain"
+                className="w-full rounded-lg object-contain"
               />
             )}
           </div>
 
-          {/* Identity + Stats */}
-          <div className="space-y-4">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {card.name}
-              </h1>
-              <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-400">
-                {card.card_number && <span>#{card.card_number}</span>}
-                {card.rarity && (
-                  <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
-                    {card.rarity}
-                  </span>
-                )}
-                {card.product_code && <span>{card.product_code}</span>}
-              </div>
-            </div>
+        </aside>
 
-            {/* Brand / Set / Group breadcrumb */}
-            <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
-              <div className="flex items-center gap-2">
-                {card.brand_icon && (
-                  <img
-                    src={card.brand_icon}
-                    alt=""
-                    className="w-4 h-4 object-contain"
-                  />
-                )}
-                <span className="font-medium text-gray-900 dark:text-white">
-                  {card.brand_name}
-                </span>
-              </div>
-              <div>
-                {card.set_name}
-                {card.group_name && (
-                  <span className="text-gray-400 dark:text-gray-500">
-                    {" "}
-                    / {card.group_name}
-                  </span>
-                )}
-              </div>
-              {card.language && (
-                <div className="flex items-center gap-1.5">
-                  <svg
-                    className="w-3.5 h-3.5 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1.5}
-                      d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9l5-12 5 12M9 19l-1.547-3.852M14.99 16h-4.98"
-                    />
-                  </svg>
-                  <span>{card.language}</span>
-                </div>
-              )}
-            </div>
+        {/* Right column */}
+        <div className="lg:col-span-2 space-y-6">
 
-            {/* Price */}
-            <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-              <p className="text-xs text-gray-500 dark:text-gray-400">
-                Price
-              </p>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
-                {formatPrice(card.price_ungraded, currency, rates)}
-              </p>
-            </div>
-
-            {/* Stats */}
-            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Type
-                </p>
-                <p className="text-lg font-semibold text-gray-900 dark:text-white capitalize">
-                  {card.product_kind}
-                </p>
-                <ProductBadges
-                  isFoil={card.is_foil}
-                  isVariantEdition={card.is_variant_edition}
-                  isCase={card.is_case}
-                  className="mt-1"
-                />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Unit Change
-                </p>
-                {card.unit_change_cents != null ? (
-                  <p className={`text-lg font-semibold ${unitChangeColor}`}>
-                    {unitChangeSign}
-                    {formatPrice(card.unit_change_cents, currency, rates)}
-                    {card.unit_change_percent != null && (
-                      <span className="text-sm ml-1">
-                        ({unitChangeSign}
-                        {Number(card.unit_change_percent).toFixed(2)}%)
-                      </span>
-                    )}
-                  </p>
-                ) : (
-                  <p className="text-lg font-semibold text-gray-900 dark:text-white">
-                    —
-                  </p>
-                )}
-              </div>
-            </div>
+      {/* Card Details */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+            {card.name}
+          </h1>
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-gray-600 dark:text-gray-400">
+            {card.card_number && <span>#{card.card_number}</span>}
+            {card.rarity && (
+              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400">
+                {card.rarity}
+              </span>
+            )}
+            {card.product_code && <span>{card.product_code}</span>}
           </div>
+        </div>
+
+        {/* Brand / Set / Group */}
+        <div className="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+          <div className="flex items-center gap-2">
+            {card.brand_icon && (
+              <img
+                src={card.brand_icon}
+                alt=""
+                className="w-4 h-4 object-contain"
+              />
+            )}
+            <span className="font-medium text-gray-900 dark:text-white">
+              {card.brand_name}
+            </span>
+          </div>
+          <div>
+            {card.set_name}
+            {card.group_name && (
+              <span className="text-gray-400 dark:text-gray-500">
+                {" "}
+                / {card.group_name}
+              </span>
+            )}
+          </div>
+          {card.language && (
+            <div className="flex items-center gap-1.5">
+              <svg
+                className="w-3.5 h-3.5 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9l5-12 5 12M9 19l-1.547-3.852M14.99 16h-4.98"
+                />
+              </svg>
+              <span>{card.language}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Price + stats + ebay row */}
+        <div className="pt-4 border-t border-gray-200 dark:border-gray-700 grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Price</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">
+              {formatPrice(card.price_ungraded, currency, rates)}
+            </p>
+            {card.unit_change_cents != null && (
+              <p className={`text-sm font-medium mt-1 ${unitChangeColor}`}>
+                {unitChangeSign}
+                {formatPrice(card.unit_change_cents, currency, rates)}
+                {card.unit_change_percent != null && (
+                  <span className="ml-1">
+                    ({unitChangeSign}
+                    {Number(card.unit_change_percent).toFixed(2)}%)
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Type</p>
+            <p className="text-base font-semibold text-gray-900 dark:text-white capitalize mt-0.5">
+              {card.product_kind}
+            </p>
+            <ProductBadges
+              isFoil={card.is_foil}
+              isVariantEdition={card.is_variant_edition}
+              isCase={card.is_case}
+              className="mt-2"
+            />
+          </div>
+          <a
+            href={ebaySoldUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full inline-flex items-center justify-center px-4 py-2 rounded-md bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
+          >
+            View Sold on eBay
+            <svg
+              className="ml-2 w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              />
+            </svg>
+          </a>
         </div>
       </div>
 
@@ -503,41 +516,6 @@ export default function CardDetailPage() {
             )}
           </div>
         )}
-      </div>
-
-      {/* eBay Last Sold */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-white">
-            eBay Last Sold
-          </h2>
-        </div>
-        <div className="px-6 py-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            See recently completed sales for this card on eBay.
-          </p>
-          <a
-            href={ebaySoldUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-red-500 hover:bg-red-600 text-white text-sm font-medium transition-colors"
-          >
-            View Sold on eBay
-            <svg
-              className="ml-2 w-4 h-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-              />
-            </svg>
-          </a>
-        </div>
       </div>
 
       {/* Price History */}
@@ -767,6 +745,8 @@ export default function CardDetailPage() {
             ))}
           </ul>
         )}
+      </div>
+        </div>
       </div>
     </div>
   );

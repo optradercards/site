@@ -68,7 +68,7 @@ export default function FeaturedCards() {
                 <div className="flex justify-between items-center">
                   <span className="text-xs text-gray-500 dark:text-gray-400">{card.type}</span>
                   <span className="text-lg md:text-xl font-bold text-red-500">
-                    ${card.price.toFixed(2)}
+                    ${card.price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
               </div>

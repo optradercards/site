@@ -53,7 +53,11 @@ interface PreviewData {
 function formatPrice(cents: number | null, currency: string | null): string {
   if (cents == null) return '—';
   const symbol = currency?.toLowerCase() === 'aud' ? 'A$' : '$';
-  return `${symbol}${(cents / 100).toFixed(2)}`;
+  const formatted = (cents / 100).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  return `${symbol}${formatted}`;
 }
 
 function formatGrade(type: string | null, state: string | null): string {
