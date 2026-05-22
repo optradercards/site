@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
+import { useProfile } from "@/hooks/useProfile";
+import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
 
@@ -25,6 +27,8 @@ type DraftItem = {
   listing_id: string | null;
   card_product_id: string | null;
   card_name: string;
+  card_number: string | null;
+  set_name: string | null;
   image_url: string | null;
   grading_service: string | null;
   grade: string | null;
@@ -42,6 +46,7 @@ type CatalogProduct = {
   brand_name: string | null;
   card_number: string | null;
   rarity: string | null;
+  price_ungraded: number | null; // USD cents
 };
 
 function uniqueKey(): string {
@@ -70,6 +75,14 @@ export default function SellPage() {
   const { activeAccountId } = useAccounts();
   const params = useParams();
   const slug = params?.slug as string;
+  const { data: profileData } = useProfile();
+  const { data: rates } = useExchangeRates();
+  const sellerCurrency = profileData?.profile?.default_currency ?? "AUD";
+  // USD → seller-currency conversion factor for cards.products prices.
+  const usdToSellerRate =
+    sellerCurrency.toLowerCase() === "usd"
+      ? 1
+      : (rates?.[sellerCurrency.toLowerCase()] ?? 1);
 
   // --- Inventory search (outbound by default) ----------------------------
   const [invSearchInput, setInvSearchInput] = useState("");
@@ -105,15 +118,13 @@ export default function SellPage() {
     };
   }, [supabase, activeAccountId, invSearch]);
 
-  // --- Catalog search (inbound by default) -------------------------------
-  const [showCatalog, setShowCatalog] = useState(false);
+  // --- Catalog search (trade-in) -----------------------------------------
   const [catSearchInput, setCatSearchInput] = useState("");
   const catSearch = useDebounced(catSearchInput, 250);
   const [catResults, setCatResults] = useState<CatalogProduct[]>([]);
   const [catSearching, setCatSearching] = useState(false);
 
   useEffect(() => {
-    if (!showCatalog) return;
     let cancelled = false;
     (async () => {
       if (!catSearch.trim()) {
@@ -125,7 +136,7 @@ export default function SellPage() {
         .schema("cards")
         .from("products_with_details")
         .select(
-          "id, name, image_url, set_name, brand_name, card_number, rarity"
+          "id, name, image_url, set_name, brand_name, card_number, rarity, price_ungraded"
         )
         .or(`name.ilike.%${catSearch.trim()}%,card_number.ilike.%${catSearch.trim()}%`)
         .limit(30);
@@ -137,13 +148,14 @@ export default function SellPage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, catSearch, showCatalog]);
+  }, [supabase, catSearch]);
 
   // --- Cart --------------------------------------------------------------
   const [items, setItems] = useState<DraftItem[]>([]);
   const currency = invResults[0]?.currency ?? "AUD";
 
   const addOutbound = useCallback((listing: EcomListing) => {
+    setInvSearchInput("");
     setItems((prev) => {
       const existing = prev.find(
         (i) => i.listing_id === listing.id && i.direction === "out"
@@ -162,6 +174,8 @@ export default function SellPage() {
           listing_id: listing.id,
           card_product_id: listing.card_product_id,
           card_name: listing.card_name,
+          card_number: listing.card_number,
+          set_name: listing.set_name,
           image_url: listing.image_url,
           grading_service: listing.grading_service,
           grade: listing.grade,
@@ -174,25 +188,36 @@ export default function SellPage() {
     });
   }, []);
 
-  const addInbound = useCallback((product: CatalogProduct) => {
-    setItems((prev) => [
-      ...prev,
-      {
-        key: uniqueKey(),
-        listing_id: null,
-        card_product_id: product.id,
-        card_name: product.name,
-        image_url: product.image_url,
-        grading_service: null,
-        grade: null,
-        direction: "in",
-        quantity: 1,
-        unit_price_cents: 0,
-        max_available: Number.POSITIVE_INFINITY,
-      },
-    ]);
-    setCatSearchInput("");
-  }, []);
+  const addInbound = useCallback(
+    (product: CatalogProduct) => {
+      // Pre-fill the trade-in's market value with ungraded price converted
+      // to seller currency. User can override before completing.
+      const marketSellerCents =
+        product.price_ungraded != null
+          ? Math.round(product.price_ungraded * usdToSellerRate)
+          : 0;
+      setItems((prev) => [
+        ...prev,
+        {
+          key: uniqueKey(),
+          listing_id: null,
+          card_product_id: product.id,
+          card_name: product.name,
+          card_number: product.card_number,
+          set_name: product.set_name,
+          image_url: product.image_url,
+          grading_service: null,
+          grade: null,
+          direction: "in",
+          quantity: 1,
+          unit_price_cents: marketSellerCents,
+          max_available: Number.POSITIVE_INFINITY,
+        },
+      ]);
+      setCatSearchInput("");
+    },
+    [usdToSellerRate],
+  );
 
   const updateItem = useCallback((key: string, patch: Partial<DraftItem>) => {
     setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
@@ -211,17 +236,33 @@ export default function SellPage() {
     [items]
   );
 
+  // Trade percentage: what fraction of an inbound item's stated market
+  // value the buyer gets as trade credit. 75 means $100 in trade-ins is
+  // worth $75 toward what they're buying. The lot we book for inbound
+  // items also uses this as the cost basis (×0.75 of market).
+  const [tradePctInput, setTradePctInput] = useState("75");
+  const tradePct = useMemo(() => {
+    const n = parseFloat(tradePctInput);
+    return Number.isFinite(n) && n >= 0 && n <= 200 ? n : 75;
+  }, [tradePctInput]);
+
   const totals = useMemo(() => {
     const out = outbound.reduce(
       (sum, it) => sum + it.unit_price_cents * it.quantity,
       0
     );
-    const inc = inbound.reduce(
+    const inMarket = inbound.reduce(
       (sum, it) => sum + it.unit_price_cents * it.quantity,
       0
     );
-    return { out_cents: out, in_cents: inc, net_cents: out - inc };
-  }, [outbound, inbound]);
+    const inCredit = Math.round(inMarket * (tradePct / 100));
+    return {
+      out_cents: out,
+      in_market_cents: inMarket,
+      in_credit_cents: inCredit,
+      net_cents: out - inCredit,
+    };
+  }, [outbound, inbound, tradePct]);
 
   // --- Buyer + payment ---------------------------------------------------
   const [buyerName, setBuyerName] = useState("");
@@ -248,6 +289,10 @@ export default function SellPage() {
       // Pure trade = no cash changes hands.
       const type = totals.net_cents === 0 ? "trade" : "order";
 
+      // Persist tradePct only when there's an actual trade-in mix; on
+      // pure cash sales it stays null so it's clear from the row.
+      const txTradePct = inbound.length > 0 ? tradePct : null;
+
       // 1. Insert transaction
       const { data: tx, error: txErr } = await supabase
         .schema("ecom")
@@ -258,10 +303,30 @@ export default function SellPage() {
           status: "draft",
           buyer_contact,
           currency,
+          trade_value_pct: txTradePct,
         })
         .select("id")
         .single();
       if (txErr) throw txErr;
+
+      // 1b. Upsert ecom.contacts when we have enough to identify the buyer.
+      // Email is the unique key per account; if we only have phone/name we
+      // skip the upsert (would create dupes on every visit).
+      if (buyerEmail.trim()) {
+        const { error: contactErr } = await supabase
+          .schema("ecom")
+          .from("contacts")
+          .upsert(
+            {
+              account_id: activeAccountId,
+              email: buyerEmail.trim(),
+              name: buyerName.trim() || buyerEmail.trim(),
+              phone: buyerPhone.trim() || null,
+            },
+            { onConflict: "account_id,email" },
+          );
+        if (contactErr) throw contactErr;
+      }
 
       // 2. Insert items with derived side (capture ids so we can allocate lots)
       const rows = items.map((it) => ({
@@ -317,6 +382,36 @@ export default function SellPage() {
         if (allocErr) throw allocErr;
       }
 
+      // 4b. Trade-in items land in inventory as new lots. Cost basis =
+      //     market value × tradePct (we paid 75% of market for the trade).
+      //     acquisition_source='trade_in' so reports can tell them from
+      //     purchased stock.
+      const today = new Date().toISOString().slice(0, 10);
+      const inboundLots = items
+        .filter((it) => it.direction === "in" && it.card_product_id)
+        .map((it) => ({
+          account_id: activeAccountId,
+          card_product_id: it.card_product_id,
+          grading_service: it.grading_service ?? "ungraded",
+          grade: it.grade,
+          quantity_acquired: it.quantity,
+          quantity_remaining: it.quantity,
+          acquisition_cost_cents: Math.round(
+            it.unit_price_cents * (tradePct / 100),
+          ),
+          acquisition_currency: currency,
+          acquisition_source: "trade_in" as const,
+          acquired_at: today,
+          notes: `Trade-in from sell ticket ${tx.id} on ${today}`,
+        }));
+      if (inboundLots.length > 0) {
+        const { error: lotErr } = await supabase
+          .schema("ecom")
+          .from("inventory_lots")
+          .insert(inboundLots);
+        if (lotErr) throw lotErr;
+      }
+
       // 5. Mark transaction completed
       const { error: doneErr } = await supabase
         .schema("ecom")
@@ -334,7 +429,6 @@ export default function SellPage() {
       setPaymentMethod("cash");
       setInvSearchInput("");
       setCatSearchInput("");
-      setShowCatalog(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not complete sale");
     } finally {
@@ -347,11 +441,13 @@ export default function SellPage() {
     buyerPhone,
     canComplete,
     currency,
+    inbound.length,
     items,
     payidRef,
     paymentMethod,
     supabase,
     totals.net_cents,
+    tradePct,
   ]);
 
   // --- Render ------------------------------------------------------------
@@ -366,164 +462,207 @@ export default function SellPage() {
         </p>
       </header>
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6">
-        {/* LEFT: Inventory + catalog adders */}
-        <section className="space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                Your inventory
-              </h2>
-              <button
-                type="button"
-                onClick={() => setShowCatalog((s) => !s)}
-                className="text-xs font-medium text-red-500 hover:text-red-600"
-              >
-                {showCatalog ? "Hide trade-in" : "+ Add trade-in"}
-              </button>
-            </div>
+      {/* Invoice header — customer + trade percentage */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 md:p-8 mb-6">
+        <div className="flex items-baseline justify-between mb-5 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+            Customer
+          </h2>
+          <span className="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500">
+            New invoice
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+              Name
+            </span>
             <input
-              value={invSearchInput}
-              onChange={(e) => setInvSearchInput(e.target.value)}
-              placeholder="Search your inventory by card name…"
-              autoFocus
-              className="w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+              value={buyerName}
+              onChange={(e) => setBuyerName(e.target.value)}
+              placeholder="Walk-in customer"
+              className="block w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
             />
-          </div>
+          </label>
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+              Email
+            </span>
+            <input
+              value={buyerEmail}
+              onChange={(e) => setBuyerEmail(e.target.value)}
+              placeholder="customer@example.com"
+              type="email"
+              className="block w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </label>
+          <label className="block">
+            <span className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+              Phone
+            </span>
+            <input
+              value={buyerPhone}
+              onChange={(e) => setBuyerPhone(e.target.value)}
+              placeholder="04xx xxx xxx"
+              className="block w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+            />
+          </label>
+        </div>
+        <div className="mt-5 pt-5 border-t border-gray-100 dark:border-gray-700 flex items-end gap-4">
+          <label className="block flex-1 max-w-xs">
+            <span className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+              Trade % of market value
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                value={tradePctInput}
+                onChange={(e) => setTradePctInput(e.target.value)}
+                min="0"
+                max="200"
+                step="0.5"
+                className="block w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              />
+              <span className="text-lg font-semibold text-gray-500 dark:text-gray-400">
+                %
+              </span>
+            </div>
+          </label>
+          <p className="text-xs text-gray-500 dark:text-gray-400 pb-3">
+            We credit the customer this much of each trade-in's market value.
+            E.g. <strong>75%</strong> means a $100 trade card is worth $75
+            toward what they're buying, and lands in inventory at $75 cost.
+          </p>
+        </div>
+      </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            {invSearching && invResults.length === 0 ? (
-              <p className="col-span-full text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
-                Searching…
-              </p>
-            ) : invResults.length === 0 ? (
-              <p className="col-span-full text-sm text-gray-500 dark:text-gray-400 py-8 text-center">
-                No active listings match.
-              </p>
-            ) : (
-              invResults.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => addOutbound(r)}
-                  className="text-left bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-red-400 hover:shadow-md transition-all"
-                >
-                  <div className="aspect-[5/7] bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
-                    {r.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={r.image_url}
-                        alt={r.card_name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : null}
-                    {r.quantity > 1 && (
-                      <span className="absolute top-1 right-1 px-1.5 py-0.5 text-[10px] font-bold bg-gray-900/70 text-white rounded">
-                        ×{r.quantity}
-                      </span>
-                    )}
-                  </div>
-                  <div className="p-2">
-                    <p className="text-xs font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
-                      {r.card_name}
-                    </p>
-                    <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
-                      {r.set_name}
-                      {r.grading_service && r.grading_service !== "ungraded"
-                        ? ` · ${gradeLabel(r.grading_service, r.grade)}`
-                        : ""}
-                    </p>
-                    <p className="text-sm font-bold text-gray-900 dark:text-gray-100 mt-1">
-                      {formatPrice(
-                        r.price_cents ?? r.calculated_price_cents ?? null,
-                        r.currency,
-                        {},
-                        r.currency
-                      )}
-                    </p>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-
-          {showCatalog && (
-            <div className="bg-gray-50 dark:bg-gray-800/60 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-                  Trade-in (from buyer)
-                </h2>
-                <p className="text-[10px] text-gray-400">
-                  Search the global catalog
+      {/* Compact search lines — full width above the invoice grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
+        <SearchLine
+          label="Add from inventory (sell)"
+          placeholder="Search your inventory…"
+          value={invSearchInput}
+          onChange={setInvSearchInput}
+          searching={invSearching}
+          results={invResults}
+          renderRow={(r) => (
+            <>
+              <div className="w-10 h-14 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                {r.image_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={r.image_url}
+                    alt={r.card_name}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                  {r.card_name}
+                  {r.card_number && (
+                    <span className="ml-1.5 text-xs font-mono font-normal text-gray-500 dark:text-gray-400">
+                      #{r.card_number}
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                  {r.set_name}
+                  {r.grading_service && r.grading_service !== "ungraded"
+                    ? ` · ${gradeLabel(r.grading_service, r.grade)}`
+                    : ""}
                 </p>
               </div>
-              <input
-                value={catSearchInput}
-                onChange={(e) => setCatSearchInput(e.target.value)}
-                placeholder="Search any card by name…"
-                className="w-full px-3 py-2 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-              {catSearchInput.trim() && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-72 overflow-y-auto">
-                  {catSearching && catResults.length === 0 ? (
-                    <p className="col-span-full text-xs text-gray-500 py-4 text-center">
-                      Searching…
-                    </p>
-                  ) : catResults.length === 0 ? (
-                    <p className="col-span-full text-xs text-gray-500 py-4 text-center">
-                      No cards match.
-                    </p>
-                  ) : (
-                    catResults.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => addInbound(p)}
-                        className="text-left bg-white dark:bg-gray-900 rounded border border-gray-200 dark:border-gray-700 overflow-hidden hover:border-red-400 transition-colors"
-                      >
-                        <div className="aspect-[5/7] bg-gray-100 dark:bg-gray-800 relative">
-                          {p.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={p.image_url}
-                              alt={p.name}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
-                          ) : null}
-                        </div>
-                        <div className="p-1.5">
-                          <p className="text-[11px] font-medium text-gray-800 dark:text-gray-200 line-clamp-2">
-                            {p.name}
-                          </p>
-                          <p className="text-[10px] text-gray-500 dark:text-gray-400 line-clamp-1">
-                            {p.set_name ?? ""}
-                          </p>
-                        </div>
-                      </button>
-                    ))
+              <div className="text-right shrink-0">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                  {formatPrice(
+                    r.price_cents ?? r.calculated_price_cents ?? null,
+                    r.currency,
+                    {},
+                    r.currency,
+                  )}
+                </p>
+                {r.market_price_cents != null && (
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 tabular-nums">
+                    mkt {formatPrice(r.market_price_cents, r.currency, {}, r.currency)}
+                  </p>
+                )}
+                <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                  qty {r.quantity}
+                </p>
+              </div>
+            </>
+          )}
+          rowKey={(r) => r.id}
+          onSelect={addOutbound}
+          autoFocus
+          size="compact"
+        />
+
+        <SearchLine
+          label="Add trade-in (any card)"
+          placeholder="Search the catalog…"
+          value={catSearchInput}
+          onChange={setCatSearchInput}
+          searching={catSearching}
+          results={catResults}
+          renderRow={(p) => {
+            const marketSellerCents =
+              p.price_ungraded != null
+                ? Math.round(p.price_ungraded * usdToSellerRate)
+                : null;
+            return (
+              <>
+                <div className="w-10 h-14 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                  {p.image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.image_url}
+                      alt={p.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
                   )}
                 </div>
-              )}
-            </div>
-          )}
-        </section>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                    {p.name}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    {[p.set_name, p.card_number].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  {marketSellerCents != null ? (
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                      {formatPrice(marketSellerCents, sellerCurrency, {}, sellerCurrency)}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-400 dark:text-gray-500">no mkt</p>
+                  )}
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400">market</p>
+                </div>
+              </>
+            );
+          }}
+          rowKey={(p) => p.id}
+          onSelect={addInbound}
+          size="compact"
+        />
+      </div>
 
-        {/* RIGHT: Current transaction */}
-        <aside className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-            Current transaction
-          </h2>
-
+      <div className="grid lg:grid-cols-[1fr_360px] gap-6">
+        {/* LEFT: Invoice line items (big) */}
+        <section className="space-y-4">
           {items.length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400 py-6 text-center border border-dashed border-gray-200 dark:border-gray-700 rounded-lg">
-              Tap a card to add it.
-            </p>
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-10 text-center text-gray-400 dark:text-gray-500 border border-dashed border-gray-200 dark:border-gray-700">
+              Add items via the search above to start an invoice.
+            </div>
           ) : (
-            <div className="space-y-4">
+            <>
               <ItemGroup
-                label="Going out (to buyer)"
+                label="Selling to customer"
                 tone="out"
                 items={outbound}
                 subtotalCents={totals.out_cents}
@@ -532,61 +671,71 @@ export default function SellPage() {
                 onRemove={removeItem}
               />
               <ItemGroup
-                label="Coming in (from buyer)"
+                label="Taking in as trade"
                 tone="in"
                 items={inbound}
-                subtotalCents={totals.in_cents}
+                subtotalCents={totals.in_market_cents}
                 currency={currency}
                 onUpdate={updateItem}
                 onRemove={removeItem}
               />
-            </div>
+            </>
           )}
+        </section>
 
-          <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between text-base font-bold">
-              <span className="text-gray-600 dark:text-gray-300">
+        {/* RIGHT: Current transaction */}
+        <aside className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+            Summary
+          </h2>
+
+          {/* Totals breakdown */}
+          <div className="pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1 text-sm">
+            <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+              <span>Sale total</span>
+              <span className="tabular-nums">
+                {formatPrice(totals.out_cents, currency, {}, currency)}
+              </span>
+            </div>
+            {inbound.length > 0 && (
+              <>
+                <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+                  <span>Trade-in market value</span>
+                  <span className="tabular-nums">
+                    {formatPrice(totals.in_market_cents, currency, {}, currency)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+                  <span>Trade credit ({tradePct}%)</span>
+                  <span className="tabular-nums">
+                    − {formatPrice(totals.in_credit_cents, currency, {}, currency)}
+                  </span>
+                </div>
+              </>
+            )}
+            <div className="flex items-center justify-between text-base font-bold pt-1 border-t border-gray-100 dark:border-gray-700 mt-1">
+              <span className="text-gray-700 dark:text-gray-200">
                 {totals.net_cents > 0
-                  ? "Buyer pays"
+                  ? "Customer pays"
                   : totals.net_cents < 0
-                    ? "We pay buyer"
+                    ? "We pay customer"
                     : items.length === 0
                       ? "Total"
                       : "Even trade"}
               </span>
-              <span className="text-gray-900 dark:text-gray-100">
+              <span
+                className={
+                  totals.net_cents > 0
+                    ? "text-green-700 dark:text-green-400 tabular-nums"
+                    : totals.net_cents < 0
+                      ? "text-red-700 dark:text-red-400 tabular-nums"
+                      : "text-gray-900 dark:text-gray-100 tabular-nums"
+                }
+              >
                 {formatPrice(Math.abs(totals.net_cents), currency, {}, currency)}
               </span>
             </div>
           </div>
-
-          {/* Buyer */}
-          <details className="border-t border-gray-200 dark:border-gray-700 pt-3" open>
-            <summary className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 cursor-pointer mb-2">
-              Buyer
-            </summary>
-            <div className="space-y-2">
-              <input
-                value={buyerName}
-                onChange={(e) => setBuyerName(e.target.value)}
-                placeholder="Name"
-                className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-              />
-              <input
-                value={buyerEmail}
-                onChange={(e) => setBuyerEmail(e.target.value)}
-                placeholder="Email (for receipt)"
-                type="email"
-                className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-              />
-              <input
-                value={buyerPhone}
-                onChange={(e) => setBuyerPhone(e.target.value)}
-                placeholder="Phone"
-                className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-              />
-            </div>
-          </details>
 
           {/* Payment */}
           {totals.net_cents > 0 && (
@@ -667,52 +816,82 @@ function ItemGroup({
   onUpdate: (key: string, patch: Partial<DraftItem>) => void;
   onRemove: (key: string) => void;
 }) {
-  const headerClass =
+  const accent =
     tone === "out"
-      ? "text-red-700 dark:text-red-300"
-      : "text-green-700 dark:text-green-300";
+      ? "border-l-4 border-red-300 dark:border-red-700"
+      : "border-l-4 border-green-300 dark:border-green-700";
+  const toneTag =
+    tone === "out"
+      ? "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+      : "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300";
   return (
-    <section>
-      <div className="flex items-baseline justify-between mb-1.5">
-        <h3 className={`text-xs font-semibold uppercase tracking-wide ${headerClass}`}>
+    <section
+      className={`bg-white dark:bg-gray-800 rounded-lg shadow ${accent} overflow-hidden`}
+    >
+      <div className="flex items-baseline justify-between px-5 py-3 border-b border-gray-100 dark:border-gray-700">
+        <h3 className="text-base font-semibold text-gray-800 dark:text-gray-100">
           {label}
+          <span
+            className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide ${toneTag}`}
+          >
+            {items.length} item{items.length === 1 ? "" : "s"}
+          </span>
         </h3>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
+        <span className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
           {items.length === 0
             ? "—"
             : formatPrice(subtotalCents, currency, {}, currency)}
         </span>
       </div>
       {items.length === 0 ? (
-        <p className="text-[11px] text-gray-400 dark:text-gray-500 italic py-2">
+        <p className="px-5 py-6 text-sm text-gray-400 dark:text-gray-500 italic text-center">
           Nothing here yet.
         </p>
       ) : (
-        <ul className="space-y-2 divide-y divide-gray-100 dark:divide-gray-700">
-          {items.map((it) => (
-            <li key={it.key} className="pt-2 first:pt-0 space-y-1.5">
-              <div className="flex items-start gap-2">
+        <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+          {items.map((it) => {
+            const lineTotal = it.unit_price_cents * it.quantity;
+            return (
+              <li
+                key={it.key}
+                className="px-5 py-4 flex items-start gap-4 hover:bg-gray-50/50 dark:hover:bg-gray-700/20"
+              >
+                {/* Thumbnail */}
+                <div className="w-14 h-20 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                  {it.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={it.image_url}
+                      alt={it.card_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : null}
+                </div>
+
+                {/* Name + meta */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-800 dark:text-gray-200 line-clamp-1">
+                  <p className="text-base font-medium text-gray-900 dark:text-gray-100 line-clamp-2">
                     {it.card_name}
                   </p>
-                  <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                  {it.card_number && (
+                    <p className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5">
+                      #{it.card_number}
+                    </p>
+                  )}
+                  {it.set_name && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                      {it.set_name}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                     {it.listing_id
                       ? gradeLabel(it.grading_service, it.grade)
-                      : "From buyer"}
+                      : "Trade-in from buyer"}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => onRemove(it.key)}
-                  className="text-gray-400 hover:text-red-500 text-lg leading-none px-1"
-                  aria-label="Remove"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap text-xs">
-                <div className="inline-flex items-center rounded border border-gray-200 dark:border-gray-700">
+
+                {/* Qty stepper */}
+                <div className="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700 shrink-0 self-center">
                   <button
                     type="button"
                     onClick={() =>
@@ -720,11 +899,12 @@ function ItemGroup({
                         quantity: Math.max(1, it.quantity - 1),
                       })
                     }
-                    className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="px-2.5 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    aria-label="Decrease quantity"
                   >
                     −
                   </button>
-                  <span className="px-2 py-1 min-w-[2rem] text-center text-gray-800 dark:text-gray-200">
+                  <span className="px-3 py-1.5 min-w-[2.5rem] text-center text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
                     {it.quantity}
                   </span>
                   <button
@@ -734,43 +914,132 @@ function ItemGroup({
                         quantity: Math.min(it.max_available, it.quantity + 1),
                       })
                     }
-                    className="px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                    className="px-2.5 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
                     disabled={it.quantity >= it.max_available}
+                    aria-label="Increase quantity"
                   >
                     +
                   </button>
                 </div>
-                <input
-                  type="number"
-                  value={(it.unit_price_cents / 100).toFixed(2)}
-                  onChange={(e) =>
-                    onUpdate(it.key, {
-                      unit_price_cents: Math.round(
-                        parseFloat(e.target.value || "0") * 100
-                      ),
-                    })
-                  }
-                  step="0.01"
-                  min="0"
-                  className="w-24 px-2 py-1 text-right rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
-                />
-                <select
-                  value={it.direction}
-                  onChange={(e) =>
-                    onUpdate(it.key, {
-                      direction: e.target.value as Direction,
-                    })
-                  }
-                  className="px-2 py-1 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-[11px]"
+
+                {/* Unit price */}
+                <div className="shrink-0 self-center">
+                  <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">
+                    Unit
+                  </label>
+                  <input
+                    type="number"
+                    value={(it.unit_price_cents / 100).toFixed(2)}
+                    onChange={(e) =>
+                      onUpdate(it.key, {
+                        unit_price_cents: Math.round(
+                          parseFloat(e.target.value || "0") * 100,
+                        ),
+                      })
+                    }
+                    step="0.01"
+                    min="0"
+                    className="w-28 px-2 py-1.5 text-right text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 tabular-nums"
+                  />
+                </div>
+
+                {/* Line total */}
+                <div className="shrink-0 self-center text-right min-w-[6rem]">
+                  <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">
+                    Total
+                  </label>
+                  <p className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                    {formatPrice(lineTotal, currency, {}, currency)}
+                  </p>
+                </div>
+
+                {/* Remove */}
+                <button
+                  type="button"
+                  onClick={() => onRemove(it.key)}
+                  className="self-start text-gray-300 hover:text-red-500 text-xl leading-none px-1"
+                  aria-label="Remove"
                 >
-                  <option value="out">Outbound</option>
-                  <option value="in">Inbound</option>
-                </select>
-              </div>
-            </li>
-          ))}
+                  ×
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
+  );
+}
+
+// Typeahead search input with a dropdown of compact result rows.
+// Generic over T so it works for both inventory listings and catalog products.
+function SearchLine<T>({
+  label,
+  placeholder,
+  value,
+  onChange,
+  searching,
+  results,
+  renderRow,
+  rowKey,
+  onSelect,
+  autoFocus,
+  size = "default",
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  searching: boolean;
+  results: T[];
+  renderRow: (item: T) => React.ReactNode;
+  rowKey: (item: T) => string;
+  onSelect: (item: T) => void;
+  autoFocus?: boolean;
+  size?: "default" | "compact";
+}) {
+  const showDropdown = value.trim().length > 0;
+  const inputCls =
+    size === "compact"
+      ? "w-full px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+      : "w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500";
+  return (
+    <div className="relative">
+      <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+      </label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoFocus={autoFocus}
+        className={inputCls}
+      />
+      {showDropdown && (
+        <ul className="absolute z-20 mt-1 w-full max-h-80 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg divide-y divide-gray-100 dark:divide-gray-700">
+          {searching && results.length === 0 ? (
+            <li className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+              Searching…
+            </li>
+          ) : results.length === 0 ? (
+            <li className="px-3 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+              No matches.
+            </li>
+          ) : (
+            results.map((item) => (
+              <li key={rowKey(item)}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(item)}
+                  className="w-full flex items-center gap-3 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-left"
+                >
+                  {renderRow(item)}
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
   );
 }

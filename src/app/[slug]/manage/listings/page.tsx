@@ -96,6 +96,12 @@ export default function ListingsPage() {
   const [nameFilter, setNameFilter] = useState<string>(
     () => searchParams.get("name") ?? "",
   );
+  const [consignmentFilter, setConsignmentFilter] = useState<
+    "all" | "owned" | "consigned"
+  >(() => {
+    const v = searchParams.get("consign");
+    return v === "owned" || v === "consigned" ? v : "all";
+  });
 
   // Push filter state into the URL on change. Skips default values to keep
   // clean URLs clean. router.replace doesn't push a history entry, so the
@@ -114,6 +120,7 @@ export default function ListingsPage() {
     if (statusFilter !== "all") next.set("status", statusFilter);
     if (cardNumberFilter.trim()) next.set("card_no", cardNumberFilter.trim());
     if (nameFilter.trim()) next.set("name", nameFilter.trim());
+    if (consignmentFilter !== "all") next.set("consign", consignmentFilter);
     const qs = next.toString();
     const url = qs ? `${pathname}?${qs}` : pathname;
     if (url !== `${pathname}${window.location.search}`) {
@@ -131,6 +138,7 @@ export default function ListingsPage() {
     statusFilter,
     cardNumberFilter,
     nameFilter,
+    consignmentFilter,
     pathname,
     router,
   ]);
@@ -265,6 +273,11 @@ export default function ListingsPage() {
         (r.listing.card_name ?? "").toLowerCase().includes(nameQuery),
       );
     }
+    if (consignmentFilter === "consigned") {
+      filtered = filtered.filter((r) => r.listing.has_consignment);
+    } else if (consignmentFilter === "owned") {
+      filtered = filtered.filter((r) => !r.listing.has_consignment);
+    }
     if (!sortKey) return filtered;
     const sorted = [...filtered].sort((a, b) => {
       let av: string | number | null = null;
@@ -335,6 +348,7 @@ export default function ListingsPage() {
     statusFilter,
     cardNumberFilter,
     nameFilter,
+    consignmentFilter,
   ]);
 
   // Available grades from current listings (for the filter dropdown)
@@ -669,7 +683,8 @@ export default function ListingsPage() {
           (hasCostFilter !== "any" ? 1 : 0) +
           (statusFilter !== "all" ? 1 : 0) +
           (cardNumberFilter.trim() ? 1 : 0) +
-          (nameFilter.trim() ? 1 : 0);
+          (nameFilter.trim() ? 1 : 0) +
+          (consignmentFilter !== "all" ? 1 : 0);
         const clearAll = () => {
           setStaleOnly(false);
           setGradeFilter("all");
@@ -681,6 +696,7 @@ export default function ListingsPage() {
           setStatusFilter("all");
           setCardNumberFilter("");
           setNameFilter("");
+          setConsignmentFilter("all");
         };
         const inputCls =
           "mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500";
@@ -814,6 +830,23 @@ export default function ListingsPage() {
                     <option value="any">Any</option>
                     <option value="with">With cost</option>
                     <option value="without">Without cost</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Consignment</span>
+                  <select
+                    value={consignmentFilter}
+                    onChange={(e) =>
+                      setConsignmentFilter(
+                        e.target.value as "all" | "owned" | "consigned",
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    <option value="all">All</option>
+                    <option value="owned">Owned only</option>
+                    <option value="consigned">Consigned only</option>
                   </select>
                 </label>
 

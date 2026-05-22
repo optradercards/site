@@ -29,6 +29,7 @@ export type EcomListing = {
   account_id: string;
   status: string;
   quantity: number;
+  has_consignment: boolean;
   currency: string;
   grading_service: string | null;
   grade: string | null;
