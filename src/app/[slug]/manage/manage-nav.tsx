@@ -106,6 +106,7 @@ function buildNavItems(isTrader: boolean): NavItem[] {
       label: "Admin",
       icon: "⚙️",
       children: [
+        { href: "/manage/admin/activity", label: "Activity", icon: "🕒" },
         { href: "/manage/admin/import-sales", label: "Import sales", icon: "📤" },
         { href: "/manage/admin/import-groups", label: "Import groups", icon: "🧰" },
         { href: "/manage/admin/reconcile", label: "Reconcile", icon: "🔁" },
