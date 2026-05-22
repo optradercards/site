@@ -96,7 +96,9 @@ export default function LabelsPage() {
       .schema("ecom")
       .from("listing_details")
       .select("*")
-      .eq("account_id", activeAccountId);
+      .eq("account_id", activeAccountId)
+      .eq("status", "active")
+      .gt("quantity", 0);
 
     setListings((data ?? []) as EcomListing[]);
     setLoading(false);

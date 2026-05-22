@@ -89,6 +89,12 @@ export default function ListingsPage() {
     const v = searchParams.get("status");
     return v === "active" || v === "draft" || v === "sold" ? v : "all";
   });
+  const [cardNumberFilter, setCardNumberFilter] = useState<string>(
+    () => searchParams.get("card_no") ?? "",
+  );
+  const [nameFilter, setNameFilter] = useState<string>(
+    () => searchParams.get("name") ?? "",
+  );
 
   // Push filter state into the URL on change. Skips default values to keep
   // clean URLs clean. router.replace doesn't push a history entry, so the
@@ -105,6 +111,8 @@ export default function ListingsPage() {
     if (marketMax.trim()) next.set("mkt_max", marketMax.trim());
     if (hasCostFilter !== "any") next.set("has_cost", hasCostFilter);
     if (statusFilter !== "all") next.set("status", statusFilter);
+    if (cardNumberFilter.trim()) next.set("card_no", cardNumberFilter.trim());
+    if (nameFilter.trim()) next.set("name", nameFilter.trim());
     const qs = next.toString();
     const url = qs ? `${pathname}?${qs}` : pathname;
     if (url !== `${pathname}${window.location.search}`) {
@@ -120,6 +128,8 @@ export default function ListingsPage() {
     marketMax,
     hasCostFilter,
     statusFilter,
+    cardNumberFilter,
+    nameFilter,
     pathname,
     router,
   ]);
@@ -242,6 +252,18 @@ export default function ListingsPage() {
     if (statusFilter !== "all") {
       filtered = filtered.filter((r) => r.listing.status === statusFilter);
     }
+    const cardNoQuery = cardNumberFilter.trim().toLowerCase();
+    if (cardNoQuery) {
+      filtered = filtered.filter((r) =>
+        (r.listing.card_number ?? "").toLowerCase().includes(cardNoQuery),
+      );
+    }
+    const nameQuery = nameFilter.trim().toLowerCase();
+    if (nameQuery) {
+      filtered = filtered.filter((r) =>
+        (r.listing.card_name ?? "").toLowerCase().includes(nameQuery),
+      );
+    }
     if (!sortKey) return filtered;
     const sorted = [...filtered].sort((a, b) => {
       let av: string | number | null = null;
@@ -310,6 +332,8 @@ export default function ListingsPage() {
     marketMax,
     hasCostFilter,
     statusFilter,
+    cardNumberFilter,
+    nameFilter,
   ]);
 
   // Available grades from current listings (for the filter dropdown)
@@ -594,7 +618,9 @@ export default function ListingsPage() {
           (marketMin.trim() ? 1 : 0) +
           (marketMax.trim() ? 1 : 0) +
           (hasCostFilter !== "any" ? 1 : 0) +
-          (statusFilter !== "all" ? 1 : 0);
+          (statusFilter !== "all" ? 1 : 0) +
+          (cardNumberFilter.trim() ? 1 : 0) +
+          (nameFilter.trim() ? 1 : 0);
         const clearAll = () => {
           setStaleOnly(false);
           setGradeFilter("all");
@@ -604,6 +630,8 @@ export default function ListingsPage() {
           setMarketMax("");
           setHasCostFilter("any");
           setStatusFilter("all");
+          setCardNumberFilter("");
+          setNameFilter("");
         };
         const inputCls =
           "mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500";
@@ -699,6 +727,28 @@ export default function ListingsPage() {
                     <option value="draft">Draft</option>
                     <option value="sold">Sold</option>
                   </select>
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Name</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. Charizard"
+                    value={nameFilter}
+                    onChange={(e) => setNameFilter(e.target.value)}
+                    className={inputCls}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Card number</span>
+                  <input
+                    type="text"
+                    placeholder="e.g. 001 or BLK-1"
+                    value={cardNumberFilter}
+                    onChange={(e) => setCardNumberFilter(e.target.value)}
+                    className={inputCls}
+                  />
                 </label>
 
                 <label className="block">

@@ -711,6 +711,78 @@ export default function InventoryReconcilePage() {
     }
   };
 
+  // For qty_mismatch rows where the CSV says we have more than optrader:
+  // seed a lot for the missing difference using the bucket's CSV cost basis.
+  // Same shape as createLot but with qty = csv_qty - op_qty.
+  const createLotForMissingQty = async (b: Bucket) => {
+    if (!activeAccountId) return;
+    if (!b.card_product_id) {
+      setError("Bucket has no catalog match — can't seed a lot.");
+      return;
+    }
+    if (b.csv_cost_cents == null) {
+      setError("No cost basis in CSV — can't seed a lot.");
+      return;
+    }
+    const qty = b.csv_qty - b.op_qty;
+    if (qty <= 0) {
+      setError("CSV quantity is not greater than optrader's — nothing to add.");
+      return;
+    }
+    const diffKey = `${b.key}::diff`;
+    setCreatingKey(diffKey);
+    setError(null);
+    setNotice(null);
+    try {
+      const currency = b.csv_currency ?? "AUD";
+      const subtotal = b.csv_cost_cents * qty;
+      const today = new Date().toISOString().slice(0, 10);
+
+      const { data: purchase, error: pErr } = await supabase
+        .schema("ecom")
+        .from("purchases")
+        .insert({
+          account_id: activeAccountId,
+          purchased_at: today,
+          subtotal_cents: subtotal,
+          shipping_cents: 0,
+          fees_cents: 0,
+          total_cents: subtotal,
+          purchase_currency: currency,
+          allocation_method: "equal",
+          notes: `Reconcile diff: CSV had ${b.csv_qty}, optrader had ${b.op_qty} — seeded ${qty} on ${today}.`,
+        })
+        .select("id")
+        .single();
+      if (pErr) throw pErr;
+
+      const { error: lErr } = await supabase
+        .schema("ecom")
+        .from("inventory_lots")
+        .insert({
+          account_id: activeAccountId,
+          card_product_id: b.card_product_id,
+          grading_service: b.grading_service,
+          grade: b.grade,
+          quantity_acquired: qty,
+          quantity_remaining: qty,
+          acquisition_cost_cents: b.csv_cost_cents,
+          acquisition_currency: currency,
+          acquisition_source: "purchase",
+          acquired_at: today,
+          purchase_id: purchase.id,
+        });
+      if (lErr) throw lErr;
+
+      setNotice(`Added ${qty} to ${b.product?.name ?? "card"} (was ${b.op_qty}, now ${b.op_qty + qty}).`);
+      await loadLots();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create lot");
+    } finally {
+      setCreatingKey(null);
+    }
+  };
+
   const createLotForRow = async (b: Bucket, row: CsvRow, rowIdx: number) => {
     if (!activeAccountId) return;
     if (!b.card_product_id) {
@@ -1086,6 +1158,22 @@ export default function InventoryReconcilePage() {
                                   className="px-2.5 py-1 text-xs font-medium text-white bg-gray-800 hover:bg-gray-900 rounded disabled:opacity-50"
                                 >
                                   {creatingKey === b.key ? "Creating…" : "Create lot"}
+                                </button>
+                              )}
+                            {b.status === "qty_mismatch" &&
+                              b.card_product_id &&
+                              b.csv_cost_cents != null &&
+                              b.csv_qty > b.op_qty && (
+                                <button
+                                  type="button"
+                                  onClick={() => createLotForMissingQty(b)}
+                                  disabled={creatingKey === `${b.key}::diff`}
+                                  className="px-2.5 py-1 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded disabled:opacity-50"
+                                  title={`Create a lot of ${b.csv_qty - b.op_qty} to match the CSV`}
+                                >
+                                  {creatingKey === `${b.key}::diff`
+                                    ? "Creating…"
+                                    : `Add ${b.csv_qty - b.op_qty}`}
                                 </button>
                               )}
                           </td>
