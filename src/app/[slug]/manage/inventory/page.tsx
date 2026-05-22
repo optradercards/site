@@ -10,6 +10,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel, resolveMarketValue, type MarketData } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // Inventory list — one row per ecom.inventory_lot
@@ -503,8 +504,7 @@ export default function InventoryPage() {
                   >
                     <td className="px-4 py-3">
                       {r.image_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <ZoomableImage
                           src={r.image_url}
                           alt={r.product_name ?? ""}
                           className="w-10 h-14 object-contain rounded"

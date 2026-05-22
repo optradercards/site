@@ -10,6 +10,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
 import ProductLink from "@/components/ProductLink";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // Lot detail page — edit acquisition fields, manage group memberships
@@ -333,8 +334,7 @@ export default function InventoryLotPage() {
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
         <div className="flex items-start gap-4">
           {summary?.image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <ZoomableImage
               src={summary.image_url}
               alt={summary.product_name ?? ""}
               className="w-20 h-28 object-contain rounded"

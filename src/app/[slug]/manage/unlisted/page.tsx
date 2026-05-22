@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
@@ -14,6 +14,7 @@ import {
   type MarketData,
 } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -119,6 +120,9 @@ export default function UnlistedPage() {
   const { activeAccountId } = useAccounts();
   const params = useParams();
   const slug = params?.slug as string;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { data: profileData } = useProfile();
   const { data: exchangeRates } = useExchangeRates();
   const sellerCurrency = profileData?.profile?.default_currency ?? "AUD";
@@ -149,8 +153,73 @@ export default function UnlistedPage() {
   ]);
   const [bulkStatus, setBulkStatus] = useState<"draft" | "active">("draft");
 
-  // Filters & sorting
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  // Filters & sorting — initialized from query string; pushed back via the
+  // effect below.
+  const [filtersOpen, setFiltersOpen] = useState(
+    () => searchParams.get("filters") === "1",
+  );
+  const [gradeFilter, setGradeFilter] = useState<string>(
+    () => searchParams.get("grade") ?? "all",
+  );
+  const [costMin, setCostMin] = useState<string>(
+    () => searchParams.get("cost_min") ?? "",
+  );
+  const [costMax, setCostMax] = useState<string>(
+    () => searchParams.get("cost_max") ?? "",
+  );
+  const [marketMin, setMarketMin] = useState<string>(
+    () => searchParams.get("mkt_min") ?? "",
+  );
+  const [marketMax, setMarketMax] = useState<string>(
+    () => searchParams.get("mkt_max") ?? "",
+  );
+  const [hasCostFilter, setHasCostFilter] = useState<"any" | "with" | "without">(
+    () => {
+      const v = searchParams.get("has_cost");
+      return v === "with" || v === "without" ? v : "any";
+    },
+  );
+  const [ruleFilter, setRuleFilter] = useState<string>(
+    () => searchParams.get("rule") ?? "any",
+  );
+  const [consignmentFilter, setConsignmentFilter] = useState<
+    "all" | "owned" | "consigned"
+  >(() => {
+    const v = searchParams.get("consign");
+    return v === "owned" || v === "consigned" ? v : "all";
+  });
+
+  // Push filter state into the URL on change. router.replace doesn't push a
+  // history entry, so back button still goes to the previous page.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (filtersOpen) next.set("filters", "1");
+    if (gradeFilter !== "all") next.set("grade", gradeFilter);
+    if (costMin.trim()) next.set("cost_min", costMin.trim());
+    if (costMax.trim()) next.set("cost_max", costMax.trim());
+    if (marketMin.trim()) next.set("mkt_min", marketMin.trim());
+    if (marketMax.trim()) next.set("mkt_max", marketMax.trim());
+    if (hasCostFilter !== "any") next.set("has_cost", hasCostFilter);
+    if (ruleFilter !== "any") next.set("rule", ruleFilter);
+    if (consignmentFilter !== "all") next.set("consign", consignmentFilter);
+    const qs = next.toString();
+    const url = qs ? `${pathname}?${qs}` : pathname;
+    if (url !== `${pathname}${window.location.search}`) {
+      router.replace(url, { scroll: false });
+    }
+  }, [
+    filtersOpen,
+    gradeFilter,
+    costMin,
+    costMax,
+    marketMin,
+    marketMax,
+    hasCostFilter,
+    ruleFilter,
+    consignmentFilter,
+    pathname,
+    router,
+  ]);
   type SortKey =
     | "name"
     | "grade"
@@ -390,6 +459,81 @@ export default function UnlistedPage() {
       );
     }
 
+    // Cost range (inputs are dollar strings in sellerCurrency)
+    const parseDollarsToCents = (s: string): number | null => {
+      const trimmed = s.trim();
+      if (!trimmed) return null;
+      const n = Number(trimmed);
+      if (!Number.isFinite(n)) return null;
+      return Math.round(n * 100);
+    };
+    const costMinCents = parseDollarsToCents(costMin);
+    const costMaxCents = parseDollarsToCents(costMax);
+    if (costMinCents != null) {
+      result = result.filter(
+        (r) => r.costSeller != null && r.costSeller >= costMinCents,
+      );
+    }
+    if (costMaxCents != null) {
+      result = result.filter(
+        (r) => r.costSeller != null && r.costSeller <= costMaxCents,
+      );
+    }
+
+    // Market value range — marketValueUsd is in USD, convert input to USD
+    const dollarsToUsdCents = (s: string): number | null => {
+      const cents = parseDollarsToCents(s);
+      if (cents == null) return null;
+      // input is in sellerCurrency cents; convert to USD cents
+      return Math.round(cents / (exchangeRate || 1));
+    };
+    const marketMinUsdCents = dollarsToUsdCents(marketMin);
+    const marketMaxUsdCents = dollarsToUsdCents(marketMax);
+    if (marketMinUsdCents != null) {
+      result = result.filter((r) => {
+        if (r.marketValueUsd == null) return false;
+        return Math.round(r.marketValueUsd * 100) >= marketMinUsdCents;
+      });
+    }
+    if (marketMaxUsdCents != null) {
+      result = result.filter((r) => {
+        if (r.marketValueUsd == null) return false;
+        return Math.round(r.marketValueUsd * 100) <= marketMaxUsdCents;
+      });
+    }
+
+    // Has cost
+    if (hasCostFilter === "with") {
+      result = result.filter((r) => r.costSeller != null);
+    } else if (hasCostFilter === "without") {
+      result = result.filter((r) => r.costSeller == null);
+    }
+
+    // Pricing rule matched
+    if (ruleFilter === "none") {
+      result = result.filter((r) => r.ruleIndex == null);
+    } else if (ruleFilter !== "any") {
+      const idx = Number(ruleFilter);
+      if (Number.isFinite(idx)) {
+        result = result.filter((r) => r.ruleIndex === idx);
+      }
+    }
+
+    // Consignment status
+    if (consignmentFilter === "owned") {
+      result = result.filter(
+        (r) =>
+          r.item.consignor_acceptance == null ||
+          r.item.consignor_acceptance === "not_applicable",
+      );
+    } else if (consignmentFilter === "consigned") {
+      result = result.filter(
+        (r) =>
+          r.item.consignor_acceptance != null &&
+          r.item.consignor_acceptance !== "not_applicable",
+      );
+    }
+
     // Sort
     const dir = sort.dir === "asc" ? 1 : -1;
     const numKey = (
@@ -430,7 +574,24 @@ export default function UnlistedPage() {
     });
 
     return result;
-  }, [unlistedItems, marketMap, stagedMap, gradeFilter, sort, rules, sellerCurrency, rates, exchangeRate]);
+  }, [
+    unlistedItems,
+    marketMap,
+    stagedMap,
+    gradeFilter,
+    costMin,
+    costMax,
+    marketMin,
+    marketMax,
+    hasCostFilter,
+    ruleFilter,
+    consignmentFilter,
+    sort,
+    rules,
+    sellerCurrency,
+    rates,
+    exchangeRate,
+  ]);
 
   // -------------------------------------------------------------------------
   // Summary totals
@@ -637,28 +798,190 @@ export default function UnlistedPage() {
         </div>
       )}
 
-      {/* Filters & Sort */}
-      {rows.length > 0 && (
-        <div className="flex flex-wrap items-end gap-4 mb-4">
-          <label className="block">
-            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
-              Grade
-            </span>
-            <select
-              value={gradeFilter}
-              onChange={(e) => setGradeFilter(e.target.value)}
-              className="mt-1 block w-36 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+      {/* Filters */}
+      {unlistedItems.length > 0 && (() => {
+        const activeFilterCount =
+          (gradeFilter !== "all" ? 1 : 0) +
+          (costMin.trim() ? 1 : 0) +
+          (costMax.trim() ? 1 : 0) +
+          (marketMin.trim() ? 1 : 0) +
+          (marketMax.trim() ? 1 : 0) +
+          (hasCostFilter !== "any" ? 1 : 0) +
+          (ruleFilter !== "any" ? 1 : 0) +
+          (consignmentFilter !== "all" ? 1 : 0);
+        const clearAll = () => {
+          setGradeFilter("all");
+          setCostMin("");
+          setCostMax("");
+          setMarketMin("");
+          setMarketMax("");
+          setHasCostFilter("any");
+          setRuleFilter("any");
+          setConsignmentFilter("all");
+        };
+        const inputCls =
+          "mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500";
+        const labelCls =
+          "text-xs font-medium text-gray-500 dark:text-gray-400 uppercase";
+        return (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow mb-4">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((p) => !p)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 rounded-lg"
             >
-              <option value="all">All Grades</option>
-              {gradeOptions.map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
+              <span className="flex items-center gap-2">
+                <span>{filtersOpen ? "▾" : "▸"}</span>
+                <span>Filters</span>
+                {activeFilterCount > 0 && (
+                  <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                    {activeFilterCount}
+                  </span>
+                )}
+                <span className="text-xs text-gray-400 dark:text-gray-500">
+                  ({rows.length} of {unlistedItems.length} items)
+                </span>
+              </span>
+              {activeFilterCount > 0 && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    clearAll();
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.stopPropagation();
+                      clearAll();
+                    }
+                  }}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline cursor-pointer"
+                >
+                  Clear all
+                </span>
+              )}
+            </button>
+            {filtersOpen && (
+              <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <label className="block">
+                  <span className={labelCls}>Grade</span>
+                  <select
+                    value={gradeFilter}
+                    onChange={(e) => setGradeFilter(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="all">All grades</option>
+                    {gradeOptions.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="block">
+                  <span className={labelCls}>Cost ({currencySymbol})</span>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Min"
+                      value={costMin}
+                      onChange={(e) => setCostMin(e.target.value)}
+                      className={inputCls.replace("w-full", "w-1/2")}
+                    />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Max"
+                      value={costMax}
+                      onChange={(e) => setCostMax(e.target.value)}
+                      className={inputCls.replace("w-full", "w-1/2")}
+                    />
+                  </div>
+                </div>
+
+                <div className="block">
+                  <span className={labelCls}>Market value ({currencySymbol})</span>
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Min"
+                      value={marketMin}
+                      onChange={(e) => setMarketMin(e.target.value)}
+                      className={inputCls.replace("w-full", "w-1/2")}
+                    />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="Max"
+                      value={marketMax}
+                      onChange={(e) => setMarketMax(e.target.value)}
+                      className={inputCls.replace("w-full", "w-1/2")}
+                    />
+                  </div>
+                </div>
+
+                <label className="block">
+                  <span className={labelCls}>Has cost</span>
+                  <select
+                    value={hasCostFilter}
+                    onChange={(e) =>
+                      setHasCostFilter(
+                        e.target.value as "any" | "with" | "without",
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    <option value="any">Any</option>
+                    <option value="with">With cost</option>
+                    <option value="without">Without cost</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Pricing rule</span>
+                  <select
+                    value={ruleFilter}
+                    onChange={(e) => setRuleFilter(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="any">Any</option>
+                    <option value="none">No match</option>
+                    {rules.map((r, i) => (
+                      <option key={i} value={String(i)}>
+                        Rule {i + 1}
+                        {r.maxCents == null
+                          ? " (catch-all)"
+                          : ` (≤ ${currencySymbol}${(r.maxCents / 100).toFixed(0)})`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Consignment</span>
+                  <select
+                    value={consignmentFilter}
+                    onChange={(e) =>
+                      setConsignmentFilter(
+                        e.target.value as "all" | "owned" | "consigned",
+                      )
+                    }
+                    className={inputCls}
+                  >
+                    <option value="all">All</option>
+                    <option value="owned">Owned only</option>
+                    <option value="consigned">Consigned only</option>
+                  </select>
+                </label>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Pricing Rules */}
       {rows.length > 0 && (
@@ -834,7 +1157,7 @@ export default function UnlistedPage() {
                     className="rounded text-red-500 focus:ring-red-500"
                   />
                 </th>
-                <th className="px-4 py-3"></th>
+                <th className="px-4 py-3 w-14"></th>
                 <SortTh
                   label="Card"
                   active={sort.key === "name"}
@@ -920,15 +1243,15 @@ export default function UnlistedPage() {
                         className="rounded text-red-500 focus:ring-red-500"
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 w-14">
                       {r.item.image_url ? (
-                        <img
+                        <ZoomableImage
                           src={r.item.image_url}
                           alt={r.item.product_name}
-                          className="w-10 h-14 object-contain rounded"
+                          className="w-10 h-14 object-contain rounded max-w-none"
                         />
                       ) : (
-                        <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded flex items-center justify-center text-xs text-gray-400">
+                        <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded flex items-center justify-center text-xs text-gray-400 shrink-0">
                           {"\u2014"}
                         </div>
                       )}

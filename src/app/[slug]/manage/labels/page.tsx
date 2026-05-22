@@ -7,6 +7,7 @@ import { useAccounts } from "@/contexts/AccountContext";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -439,7 +440,7 @@ export default function LabelsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {r.listing.image_url ? (
-                        <img
+                        <ZoomableImage
                           src={r.listing.image_url}
                           alt={r.listing.card_name ?? ""}
                           className="w-10 h-14 object-contain rounded"

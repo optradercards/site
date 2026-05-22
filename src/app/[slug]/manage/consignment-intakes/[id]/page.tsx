@@ -10,6 +10,7 @@ import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { resolveMarketValue, type MarketData } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // /manage/consignment-intakes/[id] — vendor view of a single intake.
@@ -612,8 +613,7 @@ export default function ConsignmentIntakeDetailPage() {
                       <tr key={l.lot_id} className="align-top">
                         <td className="px-3 py-3">
                           {l.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
+                            <ZoomableImage
                               src={l.image_url}
                               alt={l.product_name ?? ""}
                               className="w-10 h-14 object-contain rounded"

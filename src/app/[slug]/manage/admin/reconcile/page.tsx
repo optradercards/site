@@ -9,6 +9,7 @@ import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // /[slug]/manage/admin/reconcile
@@ -1013,8 +1014,7 @@ export default function InventoryReconcilePage() {
                         <tr className="align-top">
                           <td className="px-3 py-3">
                             {b.product?.image_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
+                              <ZoomableImage
                                 src={b.product.image_url}
                                 alt={b.product.name ?? ""}
                                 className="w-10 h-14 object-contain rounded"

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { gradeLabel } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
+import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
 // Group detail — meta edit + two-pane lot assignment
@@ -334,8 +335,7 @@ export default function GroupDetailPage() {
               {inGroupOrdered.map(({ lot }, idx) => (
                 <li key={lot.lot_id} className="py-2 flex items-center gap-2">
                   {lot.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <ZoomableImage
                       src={lot.image_url}
                       alt={lot.product_name ?? ""}
                       className="w-8 h-11 object-contain rounded"
@@ -408,8 +408,7 @@ export default function GroupDetailPage() {
               {candidates.slice(0, 50).map((lot) => (
                 <li key={lot.lot_id} className="py-2 flex items-center gap-2">
                   {lot.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <ZoomableImage
                       src={lot.image_url}
                       alt={lot.product_name ?? ""}
                       className="w-8 h-11 object-contain rounded"
