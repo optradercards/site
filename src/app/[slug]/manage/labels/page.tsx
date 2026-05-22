@@ -29,28 +29,40 @@ function zplSafe(str: string): string {
   return str.replace(/[^\x20-\x7E]/g, "");
 }
 
+const LABEL_QR_URL = "https://www.optrader.com.au/";
+
 function generateZPL(items: LabelItem[]): string {
   return items
     .map((item) => {
-      // 40x15mm ≈ 320x120 dots at 203dpi
+      // 40x15mm ≈ 320x120 dots at 203dpi.
+      // QR occupies the top-right (~85x85 dots at factor 3), so the text
+      // columns are clipped to ~225 dots wide.
       const name = zplSafe(
-        item.name.length > 28
-          ? item.name.substring(0, 28) + ".."
-          : item.name
+        item.name.length > 18 ? item.name.substring(0, 18) + ".." : item.name
       );
       const line2Parts = zplSafe(
         [item.cardNumber, item.rarity].filter(Boolean).join(" | ")
       );
+      const line2 = line2Parts.length > 20 ? line2Parts.substring(0, 20) + ".." : line2Parts;
       const price = zplSafe(item.price);
       return [
         "^XA",
         "^LT20",
+        // Text column (left)
         "^CF0,22",
         "^FO10,10^FD" + name + "^FS",
         "^CF0,20",
-        "^FO10,38^FD" + line2Parts + "^FS",
+        "^FO10,38^FD" + line2 + "^FS",
         "^CF0,28",
         "^FO10,68^FD" + price + "^FS",
+        // QR (top-right). Model 2, magnification 3, low error correction
+        // (URL is short so L still scans reliably and keeps the QR small).
+        "^FO230,8",
+        "^BQN,2,3",
+        "^FDLA," + LABEL_QR_URL + "^FS",
+        // Brand name under the QR (bottom-right).
+        "^CF0,16",
+        "^FO230,100^FDOP Trader^FS",
         "^PQ" + item.quantity,
         "^XZ",
       ].join("\n");
@@ -92,6 +104,8 @@ export default function LabelsPage() {
     if (!activeAccountId) return;
     setLoading(true);
 
+    // Only labels for currently-listed (active) inventory. Drafts go
+    // through /manage/listings → bulk Activate before reaching here.
     const { data } = await supabase
       .schema("ecom")
       .from("listing_details")
@@ -176,9 +190,17 @@ export default function LabelsPage() {
     setSelectedIds(new Set());
   };
 
-  const selectedCount = rows.filter((r) =>
-    selectedIds.has(r.listing.id)
-  ).length;
+  const selectedRows = rows.filter((r) => selectedIds.has(r.listing.id));
+  const selectedCount = selectedRows.length;
+  // Each selected listing prints `quantity` labels (^PQ<quantity> in ZPL).
+  const selectedLabelTotal = selectedRows.reduce(
+    (sum, r) => sum + (r.listing.quantity ?? 0),
+    0,
+  );
+  const totalLabelsAcrossRows = rows.reduce(
+    (sum, r) => sum + (r.listing.quantity ?? 0),
+    0,
+  );
 
   // -------------------------------------------------------------------------
   // ZPL generation & export
@@ -267,6 +289,25 @@ export default function LabelsPage() {
 
   return (
     <div>
+      {/* Summary stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <StatCard label="Listings" value={String(rows.length)} />
+        <StatCard
+          label="Labels to print"
+          value={`${selectedLabelTotal}`}
+          sub={
+            selectedCount > 0
+              ? `${selectedCount} of ${rows.length} selected`
+              : `select rows to print`
+          }
+        />
+        <StatCard
+          label="Total available"
+          value={String(totalLabelsAcrossRows)}
+          sub="if you selected everything"
+        />
+      </div>
+
       {/* Label Preview & Download */}
       {zplOutput && (
         <div
@@ -340,10 +381,10 @@ export default function LabelsPage() {
             onClick={handleGenerateLabels}
             className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
           >
-            Generate Labels ({selectedCount})
+            Generate {selectedLabelTotal} label{selectedLabelTotal === 1 ? "" : "s"}
           </button>
           <div className="text-sm text-gray-600 dark:text-gray-400">
-            {selectedCount} of {rows.length} selected
+            {selectedCount} of {rows.length} listings selected
           </div>
           <button
             onClick={clearSelection}
@@ -506,6 +547,32 @@ export default function LabelsPage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        {label}
+      </div>
+      <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100 mt-1 tabular-nums">
+        {value}
+      </div>
+      {sub && (
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          {sub}
+        </div>
+      )}
     </div>
   );
 }

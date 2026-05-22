@@ -48,6 +48,7 @@ export default function ListingsPage() {
   // Bulk action state
   const [bulkUpdating, setBulkUpdating] = useState(false);
   const [bulkUnlisting, setBulkUnlisting] = useState(false);
+  const [bulkActivating, setBulkActivating] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -482,6 +483,37 @@ export default function ListingsPage() {
     await loadData();
   };
 
+  // Move selected draft listings to active so they show on the storefront
+  // and on /manage/labels. Skips non-draft rows in the selection.
+  const activateSelectedDrafts = async () => {
+    if (selectedIds.size === 0) return;
+    const draftIds = listings
+      .filter((l) => selectedIds.has(l.id) && l.status === "draft")
+      .map((l) => l.id);
+    if (draftIds.length === 0) {
+      setActionNotice("No selected listings are drafts.");
+      return;
+    }
+    setBulkActivating(true);
+    setActionError(null);
+    setActionNotice(null);
+    const { error } = await supabase
+      .schema("ecom")
+      .from("listings")
+      .update({ status: "active" })
+      .in("id", draftIds);
+    setBulkActivating(false);
+    if (error) {
+      setActionError(`Bulk activate failed: ${error.message}`);
+      return;
+    }
+    setActionNotice(
+      `Activated ${draftIds.length} draft${draftIds.length === 1 ? "" : "s"}.`,
+    );
+    clearSelection();
+    await loadData();
+  };
+
   const unlistSelected = async () => {
     if (selectedIds.size === 0) return;
     if (
@@ -538,7 +570,11 @@ export default function ListingsPage() {
       )}
 
       {/* Selection bar — appears when at least one listing is checked */}
-      {selectedIds.size > 0 && (
+      {selectedIds.size > 0 && (() => {
+        const selectedDraftCount = listings.filter(
+          (l) => selectedIds.has(l.id) && l.status === "draft",
+        ).length;
+        return (
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <button
             type="button"
@@ -550,6 +586,18 @@ export default function ListingsPage() {
               ? "Updating…"
               : `Update ${selectedIds.size} selected`}
           </button>
+          {selectedDraftCount > 0 && (
+            <button
+              type="button"
+              onClick={activateSelectedDrafts}
+              disabled={bulkActivating}
+              className="px-4 py-2 text-sm font-medium text-green-800 dark:text-green-200 bg-green-100 hover:bg-green-200 dark:bg-green-900/30 dark:hover:bg-green-900/50 rounded-lg disabled:opacity-50"
+            >
+              {bulkActivating
+                ? "Activating…"
+                : `Activate ${selectedDraftCount} draft${selectedDraftCount === 1 ? "" : "s"}`}
+            </button>
+          )}
           <button
             type="button"
             onClick={unlistSelected}
@@ -571,7 +619,8 @@ export default function ListingsPage() {
             Clear
           </button>
         </div>
-      )}
+        );
+      })()}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
