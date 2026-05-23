@@ -2,7 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
@@ -21,7 +21,27 @@ type SaleAllocation = {
   quantity: number;
   acquisition_cost_cents_snapshot: number | null;
   acquisition_currency_snapshot: string | null;
+  consignor_split_pct_snapshot: number | null;
+  consignor_chargeback_per_unit_snapshot: number | null;
 };
+
+// Effective cost for a single sale_allocation:
+//   - Consignment (split_pct set): unit_price * qty * split/100 − chargeback * qty
+//     i.e. what we owe the consignor for those units.
+//   - Otherwise: literal acquisition_cost_cents_snapshot * qty.
+// Returns null when neither path can be computed.
+function allocCostCents(a: SaleAllocation, unitPriceCents: number): number | null {
+  if (a.consignor_split_pct_snapshot != null) {
+    const gross = unitPriceCents * a.quantity;
+    const payout = Math.round(gross * Number(a.consignor_split_pct_snapshot) / 100);
+    const chargeback = (a.consignor_chargeback_per_unit_snapshot ?? 0) * a.quantity;
+    return Math.max(0, payout - chargeback);
+  }
+  if (a.acquisition_cost_cents_snapshot != null) {
+    return a.acquisition_cost_cents_snapshot * a.quantity;
+  }
+  return null;
+}
 
 type CardLite = {
   id: string;
@@ -89,6 +109,9 @@ function sourceBadgeCls(s: string | null): string {
 export default function SalesPage() {
   const params = useParams();
   const slug = params?.slug as string;
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const { activeAccountId } = useAccounts();
   const { data: profileData } = useProfile();
@@ -108,10 +131,34 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Filters — initialized from query string; pushed back via the effect
+  // below. Lets the user share / bookmark a filtered view.
   const [sourceFilter, setSourceFilter] = useState<
     "all" | "manual" | "csv_import" | "shiny_sold"
-  >("all");
-  const [search, setSearch] = useState("");
+  >(() => {
+    const v = searchParams.get("source");
+    return v === "manual" || v === "csv_import" || v === "shiny_sold" ? v : "all";
+  });
+  const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+  const [dateFrom, setDateFrom] = useState<string>(
+    () => searchParams.get("from") ?? "",
+  );
+  const [dateTo, setDateTo] = useState<string>(
+    () => searchParams.get("to") ?? "",
+  );
+
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (sourceFilter !== "all") next.set("source", sourceFilter);
+    if (search.trim()) next.set("q", search.trim());
+    if (dateFrom) next.set("from", dateFrom);
+    if (dateTo) next.set("to", dateTo);
+    const qs = next.toString();
+    const url = qs ? `${pathname}?${qs}` : pathname;
+    if (url !== `${pathname}${window.location.search}`) {
+      router.replace(url, { scroll: false });
+    }
+  }, [sourceFilter, search, dateFrom, dateTo, pathname, router]);
 
   type SortCol = "date" | "card" | "qty" | "sale" | "cost" | "margin" | "source";
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -138,7 +185,8 @@ export default function SalesPage() {
           completed_at, source_provider, source_id,
           transaction_items (
             id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
-            sale_allocations ( quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot )
+            sale_allocations ( quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot,
+              consignor_split_pct_snapshot, consignor_chargeback_per_unit_snapshot )
           )
         `,
       )
@@ -193,12 +241,18 @@ export default function SalesPage() {
 
   const rows: Row[] = useMemo(() => {
     return txs.map((tx) => {
-      // Only outbound items count as "sold" for this view. Trade-ins
-      // (traded_in / bought) decrement cash net via tx.total_cents but
-      // aren't sale line items themselves.
-      const items = tx.transaction_items.filter(
+      // For mixed sell+trade-in tickets, only outbound items are "sale
+      // lines" so we don't double-count the trade-in as a sale. For a
+      // pure-buy ticket (no outbound items), fall back to showing the
+      // inbound items so the row has something to render — parent
+      // total_cents is negative (cash out for cards), cost is 0 (no
+      // outgoing inventory consumed), margin = sale - 0 = negative,
+      // which correctly shows up as a loss in the P/L for the day.
+      const outboundItems = tx.transaction_items.filter(
         (i) => i.side === "sold" || i.side === "traded_out",
       );
+      const isPureBuy = outboundItems.length === 0;
+      const items = isPureBuy ? tx.transaction_items : outboundItems;
       const itemCount = items.length;
       const totalQty = items.reduce((s, i) => s + i.quantity, 0);
       const saleCents = tx.total_cents;
@@ -206,15 +260,19 @@ export default function SalesPage() {
       let anyCost = false;
       for (const it of items) {
         for (const a of it.sale_allocations ?? []) {
-          if (a.acquisition_cost_cents_snapshot != null) {
+          const c = allocCostCents(a, it.unit_price_cents);
+          if (c != null) {
             anyCost = true;
-            costCents =
-              (costCents ?? 0) +
-              a.acquisition_cost_cents_snapshot * a.quantity;
+            costCents = (costCents ?? 0) + c;
           }
         }
       }
-      if (!anyCost) costCents = null;
+      if (!anyCost) {
+        // No allocations = either no outbound items (pure buy: cost = 0,
+        // margin = sale) or a sale where lots aren't yet allocated (cost
+        // genuinely unknown). Distinguish: pure buys always have cost 0.
+        costCents = isPureBuy ? 0 : null;
+      }
       const marginCents = costCents != null ? saleCents - costCents : null;
       const marginPct =
         costCents != null && costCents > 0
@@ -242,6 +300,13 @@ export default function SalesPage() {
         if (sourceFilter === "csv_import" && sp !== "csv_import") return false;
         if (sourceFilter === "shiny_sold" && sp !== "shiny_sold") return false;
       }
+      if (dateFrom || dateTo) {
+        const d = r.tx.completed_at;
+        if (!d) return false;
+        const iso = d.slice(0, 10);
+        if (dateFrom && iso < dateFrom) return false;
+        if (dateTo && iso > dateTo) return false;
+      }
       if (search.trim()) {
         const needle = search.trim().toLowerCase();
         const hay =
@@ -252,7 +317,7 @@ export default function SalesPage() {
       }
       return true;
     });
-  }, [rows, sourceFilter, search]);
+  }, [rows, sourceFilter, search, dateFrom, dateTo]);
 
   const sortedRows = useMemo(() => {
     if (!sort) return filteredRows;
@@ -365,6 +430,40 @@ export default function SalesPage() {
               <option value="shiny_sold">Shiny imports</option>
             </select>
           </div>
+          <div>
+            <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+              From
+            </label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+              To
+            </label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+            />
+          </div>
+          {(dateFrom || dateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDateFrom("");
+                setDateTo("");
+              }}
+              className="self-end text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline pb-2"
+            >
+              Clear dates
+            </button>
+          )}
         </div>
       </div>
 
@@ -438,10 +537,15 @@ export default function SalesPage() {
                   return (
                     <Fragment key={tx.id}>
                     <tr className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/30">
-                      <td className="px-3 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
-                        {tx.completed_at
-                          ? new Date(tx.completed_at).toLocaleDateString()
-                          : "—"}
+                      <td className="px-3 py-3 whitespace-nowrap">
+                        <Link
+                          href={`/${slug}/manage/sales/${tx.id}`}
+                          className="text-gray-700 dark:text-gray-300 hover:text-red-600 dark:hover:text-red-400 hover:underline"
+                        >
+                          {tx.completed_at
+                            ? new Date(tx.completed_at).toLocaleDateString()
+                            : "—"}
+                        </Link>
                       </td>
                       <td className="px-3 py-3">
                         {!isMulti && item?.card?.image_url ? (
@@ -530,18 +634,22 @@ export default function SalesPage() {
                         </span>
                       </td>
                     </tr>
-                    {isMulti && isExpanded && tx.transaction_items
-                      .filter((it) => it.side === "sold" || it.side === "traded_out")
-                      .map((it) => {
+                    {isMulti && isExpanded && (() => {
+                      const out = tx.transaction_items.filter(
+                        (it) => it.side === "sold" || it.side === "traded_out",
+                      );
+                      // Pure-buy ticket: render the inbound items so the
+                      // row's items are visible and the P/L is clear.
+                      return out.length > 0 ? out : tx.transaction_items;
+                    })().map((it) => {
                       const itemSaleCents = it.unit_price_cents * it.quantity;
                       let itemCostCents: number | null = null;
                       let anyCost = false;
                       for (const a of it.sale_allocations ?? []) {
-                        if (a.acquisition_cost_cents_snapshot != null) {
+                        const c = allocCostCents(a, it.unit_price_cents);
+                        if (c != null) {
                           anyCost = true;
-                          itemCostCents =
-                            (itemCostCents ?? 0) +
-                            a.acquisition_cost_cents_snapshot * a.quantity;
+                          itemCostCents = (itemCostCents ?? 0) + c;
                         }
                       }
                       if (!anyCost) itemCostCents = null;
