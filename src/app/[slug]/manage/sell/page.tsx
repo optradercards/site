@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
-import { gradeLabel, type EcomListing } from "@/lib/pricing";
+import { gradeLabel, resolveMarketValue, type EcomListing, type MarketData } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +35,10 @@ type DraftItem = {
   direction: Direction;
   quantity: number;
   unit_price_cents: number;
+  // Stored on trade-in rows so we can recompute the market-derived unit
+  // price when the user changes the grading service / grade. Null for items
+  // coming from existing listings (price is known up-front).
+  market: MarketData | null;
   max_available: number; // Infinity for catalog-sourced (no inventory cap)
 };
 
@@ -47,7 +51,42 @@ type CatalogProduct = {
   card_number: string | null;
   rarity: string | null;
   price_ungraded: number | null; // USD cents
+  price_psa_1: number | null;
+  price_psa_2: number | null;
+  price_psa_3: number | null;
+  price_psa_4: number | null;
+  price_psa_5: number | null;
+  price_psa_6: number | null;
+  price_psa_7: number | null;
+  price_psa_8: number | null;
+  price_psa_9: number | null;
+  price_psa_10: number | null;
+  price_psa_9_5: number | null;
+  price_bgs: number | null;
+  price_cgc: number | null;
 };
+
+// Build a MarketData object from a CatalogProduct so resolveMarketValue can
+// resolve the right per-grade price.
+function marketDataFromCatalog(p: CatalogProduct): MarketData {
+  return {
+    product_id: p.id,
+    price_ungraded: p.price_ungraded,
+    price_psa_1: p.price_psa_1,
+    price_psa_2: p.price_psa_2,
+    price_psa_3: p.price_psa_3,
+    price_psa_4: p.price_psa_4,
+    price_psa_5: p.price_psa_5,
+    price_psa_6: p.price_psa_6,
+    price_psa_7: p.price_psa_7,
+    price_psa_8: p.price_psa_8,
+    price_psa_9: p.price_psa_9,
+    price_psa_10: p.price_psa_10,
+    price_psa_9_5: p.price_psa_9_5,
+    price_bgs: p.price_bgs,
+    price_cgc: p.price_cgc,
+  };
+}
 
 function uniqueKey(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -136,7 +175,10 @@ export default function SellPage() {
         .schema("cards")
         .from("products_with_details")
         .select(
-          "id, name, image_url, set_name, brand_name, card_number, rarity, price_ungraded"
+          "id, name, image_url, set_name, brand_name, card_number, rarity, " +
+            "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4, " +
+            "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9, " +
+            "price_psa_10, price_psa_9_5, price_bgs, price_cgc"
         )
         .or(`name.ilike.%${catSearch.trim()}%,card_number.ilike.%${catSearch.trim()}%`)
         .limit(30);
@@ -182,6 +224,7 @@ export default function SellPage() {
           direction: "out",
           quantity: 1,
           unit_price_cents: price,
+          market: null,
           max_available: listing.quantity,
         },
       ];
@@ -211,6 +254,7 @@ export default function SellPage() {
           direction: "in",
           quantity: 1,
           unit_price_cents: marketSellerCents,
+          market: marketDataFromCatalog(product),
           max_available: Number.POSITIVE_INFINITY,
         },
       ]);
@@ -219,9 +263,34 @@ export default function SellPage() {
     [usdToSellerRate],
   );
 
-  const updateItem = useCallback((key: string, patch: Partial<DraftItem>) => {
-    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, ...patch } : i)));
-  }, []);
+  const updateItem = useCallback(
+    (key: string, patch: Partial<DraftItem>) => {
+      setItems((prev) =>
+        prev.map((i) => {
+          if (i.key !== key) return i;
+          const next = { ...i, ...patch };
+          // Auto-recompute unit price when grading changes on a trade-in we
+          // have market data for. If they bumped grade from ungraded to PSA
+          // 10, we want the PSA 10 market value to fill in. Vendor can
+          // still type their own price after.
+          const gradingChanged =
+            "grading_service" in patch || "grade" in patch;
+          if (gradingChanged && next.direction === "in" && next.market) {
+            const usd = resolveMarketValue(
+              next.market,
+              next.grading_service,
+              next.grade ?? null,
+            );
+            if (usd != null) {
+              next.unit_price_cents = Math.round(usd * usdToSellerRate);
+            }
+          }
+          return next;
+        }),
+      );
+    },
+    [usdToSellerRate],
+  );
 
   const removeItem = useCallback((key: string) => {
     setItems((prev) => prev.filter((i) => i.key !== key));
