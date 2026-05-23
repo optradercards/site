@@ -77,6 +77,7 @@ type SalesTx = {
   source_provider: string | null;
   source_id: string | null;
   transaction_items: SalesItem[];
+  order_payments: { method: string }[];
 };
 
 type Row = {
@@ -147,6 +148,26 @@ export default function SalesPage() {
   const [dateFrom, setDateFrom] = useState<string>(
     () => searchParams.get("from") ?? "",
   );
+  const [paymentFilter, setPaymentFilter] = useState<
+    "all" | "cash" | "payid_manual" | "bank_transfer" | "trade_offset" | "none"
+  >(() => {
+    const v = searchParams.get("pay");
+    const allowed = [
+      "cash",
+      "payid_manual",
+      "bank_transfer",
+      "trade_offset",
+      "none",
+    ];
+    return v && allowed.includes(v)
+      ? (v as
+          | "cash"
+          | "payid_manual"
+          | "bank_transfer"
+          | "trade_offset"
+          | "none")
+      : "all";
+  });
   const [dateTo, setDateTo] = useState<string>(
     () => searchParams.get("to") ?? "",
   );
@@ -157,12 +178,13 @@ export default function SalesPage() {
     if (search.trim()) next.set("q", search.trim());
     if (dateFrom) next.set("from", dateFrom);
     if (dateTo) next.set("to", dateTo);
+    if (paymentFilter !== "all") next.set("pay", paymentFilter);
     const qs = next.toString();
     const url = qs ? `${pathname}?${qs}` : pathname;
     if (url !== `${pathname}${window.location.search}`) {
       router.replace(url, { scroll: false });
     }
-  }, [sourceFilter, search, dateFrom, dateTo, pathname, router]);
+  }, [sourceFilter, search, dateFrom, dateTo, paymentFilter, pathname, router]);
 
   type SortCol = "date" | "card" | "qty" | "sale" | "cost" | "margin" | "source";
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -192,7 +214,8 @@ export default function SalesPage() {
             id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
             sale_allocations ( quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot,
               consignor_split_pct_snapshot, consignor_chargeback_per_unit_snapshot )
-          )
+          ),
+          order_payments ( method )
         `,
       )
       .eq("account_id", activeAccountId)
@@ -319,9 +342,17 @@ export default function SalesPage() {
           "";
         if (!hay.includes(needle)) return false;
       }
+      if (paymentFilter !== "all") {
+        const methods = (r.tx.order_payments ?? []).map((p) => p.method);
+        if (paymentFilter === "none") {
+          if (methods.length > 0) return false;
+        } else if (!methods.includes(paymentFilter)) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [rows, sourceFilter, search, dateFrom, dateTo]);
+  }, [rows, sourceFilter, search, dateFrom, dateTo, paymentFilter]);
 
   const sortedRows = useMemo(() => {
     if (!sort) return filteredRows;
@@ -432,6 +463,25 @@ export default function SalesPage() {
               <option value="manual">Manual (POS)</option>
               <option value="csv_import">CSV imports</option>
               <option value="shiny_sold">Shiny imports</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+              Payment
+            </label>
+            <select
+              value={paymentFilter}
+              onChange={(e) =>
+                setPaymentFilter(e.target.value as typeof paymentFilter)
+              }
+              className="px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+            >
+              <option value="all">All</option>
+              <option value="cash">Cash</option>
+              <option value="payid_manual">PayID</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="trade_offset">Trade offset</option>
+              <option value="none">No payment row</option>
             </select>
           </div>
           <div>
