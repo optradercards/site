@@ -812,6 +812,62 @@ export default function SellPage() {
   );
 }
 
+// Decimal input bound to a cents value. Keeps a local string while focused so
+// typing partial decimals ("12.", "12.5") and backspacing don't get clobbered
+// by the parent reformatting the value back to two decimals on every change.
+function PriceInput({
+  valueCents,
+  onChange,
+  className,
+}: {
+  valueCents: number;
+  onChange: (cents: number) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => (valueCents / 100).toFixed(2));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText((valueCents / 100).toFixed(2));
+  }, [valueCents, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={text}
+      onFocus={(e) => {
+        setFocused(true);
+        e.currentTarget.select();
+      }}
+      onChange={(e) => {
+        const next = e.target.value;
+        if (next !== "" && !/^\d*\.?\d{0,2}$/.test(next)) return;
+        setText(next);
+        if (next === "" || next === ".") {
+          onChange(0);
+          return;
+        }
+        const parsed = parseFloat(next);
+        if (!Number.isNaN(parsed)) onChange(Math.round(parsed * 100));
+      }}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parseFloat(text);
+        if (Number.isNaN(parsed)) {
+          setText("0.00");
+          onChange(0);
+        } else {
+          const cents = Math.round(parsed * 100);
+          setText((cents / 100).toFixed(2));
+          onChange(cents);
+        }
+      }}
+      className={className}
+    />
+  );
+}
+
 function ItemGroup({
   label,
   tone,
@@ -959,19 +1015,11 @@ function ItemGroup({
                     <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
                       Unit price
                     </label>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      value={(it.unit_price_cents / 100).toFixed(2)}
-                      onChange={(e) =>
-                        onUpdate(it.key, {
-                          unit_price_cents: Math.round(
-                            parseFloat(e.target.value || "0") * 100,
-                          ),
-                        })
+                    <PriceInput
+                      valueCents={it.unit_price_cents}
+                      onChange={(cents) =>
+                        onUpdate(it.key, { unit_price_cents: cents })
                       }
-                      step="0.01"
-                      min="0"
                       className="w-28 h-11 px-3 text-right text-base rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 tabular-nums"
                     />
                   </div>
