@@ -334,6 +334,11 @@ export default function SellPage() {
     };
   }, [outbound, inbound, tradePct]);
 
+  // Empty string = no override (charge the full net). Anything else is the
+  // vendor-agreed final total in seller currency. We derive the discount
+  // from the difference, never the other way around.
+  const [totalOverrideInput, setTotalOverrideInput] = useState("");
+
   // Discount derived from the vendor-typed total override. Floors at 0
   // (typing higher than the net doesn't become a surcharge — DB also
   // CHECKs >= 0). Only meaningful when net > 0.
@@ -352,10 +357,6 @@ export default function SellPage() {
   const [buyerEmail, setBuyerEmail] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
-  // Empty string = no override (charge the full net). Anything else is the
-  // vendor-agreed final total in seller currency. We derive the discount
-  // from the difference, never the other way around.
-  const [totalOverrideInput, setTotalOverrideInput] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [payidRef, setPayidRef] = useState("");
   const [completing, setCompleting] = useState(false);
