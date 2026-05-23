@@ -15,6 +15,7 @@ import {
 } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
 import ZoomableImage from "@/components/ZoomableImage";
+import { matchesQuery } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -474,21 +475,15 @@ export default function UnlistedPage() {
       );
     }
 
-    // Card name — case-insensitive substring match
-    const nameQuery = nameFilter.trim().toLowerCase();
-    if (nameQuery) {
-      result = result.filter((r) =>
-        (r.item.product_name ?? "").toLowerCase().includes(nameQuery),
-      );
+    // Card name — punctuation-insensitive, token-AND. "st topman" matches
+    // "St. Topman", word order doesn't matter.
+    if (nameFilter.trim()) {
+      result = result.filter((r) => matchesQuery(nameFilter, r.item.product_name));
     }
 
-    // Card number — case-insensitive substring match (numbers are short
-    // strings like "025" or "SV-P 173", so substring beats exact match)
-    const numberQuery = numberFilter.trim().toLowerCase();
-    if (numberQuery) {
-      result = result.filter((r) =>
-        (r.item.card_number ?? "").toLowerCase().includes(numberQuery),
-      );
+    // Card number — same forgiving match so "025 198" matches "025/198".
+    if (numberFilter.trim()) {
+      result = result.filter((r) => matchesQuery(numberFilter, r.item.card_number));
     }
 
     // Cost range (inputs are dollar strings in sellerCurrency)

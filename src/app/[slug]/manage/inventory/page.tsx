@@ -11,6 +11,7 @@ import { formatPrice } from "@/lib/currency";
 import { gradeLabel, resolveMarketValue, type MarketData } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
 import ZoomableImage from "@/components/ZoomableImage";
+import { matchesQuery } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // Inventory list — one row per ecom.inventory_lot
@@ -332,9 +333,9 @@ export default function InventoryPage() {
       if (sourceFilter !== "all" && r.acquisition_source !== sourceFilter) return false;
       if (consignedOnly && r.acquisition_source !== "consignment") return false;
       if (search.trim()) {
-        const needle = search.trim().toLowerCase();
-        const hay = `${r.product_name ?? ""} ${r.set_name ?? ""} ${r.card_number ?? ""}`.toLowerCase();
-        if (!hay.includes(needle)) return false;
+        if (!matchesQuery(search, r.product_name, r.set_name, r.card_number)) {
+          return false;
+        }
       }
       if (listedMode !== "all") {
         const isListed = listedKeys.has(
