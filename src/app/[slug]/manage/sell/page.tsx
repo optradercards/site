@@ -274,14 +274,23 @@ export default function SellPage() {
           // have market data for. If they bumped grade from ungraded to PSA
           // 10, we want the PSA 10 market value to fill in. Vendor can
           // still type their own price after.
+          //
+          // resolveMarketValue returns null when the specific graded slot is
+          // missing (catalog gap), even though ungraded is populated. In
+          // that case fall back to ungraded so changing the grade always
+          // results in a visible price update — otherwise the input feels
+          // broken to the user. For BGS/CGC there's no per-grade catalog
+          // data at all, so changing the grade number doesn't move the
+          // price by design (the column is informational only there).
           const gradingChanged =
             "grading_service" in patch || "grade" in patch;
           if (gradingChanged && next.direction === "in" && next.market) {
-            const usd = resolveMarketValue(
+            const graded = resolveMarketValue(
               next.market,
               next.grading_service,
               next.grade ?? null,
             );
+            const usd = graded ?? next.market.price_ungraded ?? null;
             if (usd != null) {
               next.unit_price_cents = Math.round(usd * usdToSellerRate);
             }
