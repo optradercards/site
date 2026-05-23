@@ -15,6 +15,22 @@ import { matchesQuery } from "@/lib/search";
 // Store Page — shows ecom.listings (active listings)
 // ---------------------------------------------------------------------------
 
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = Math.max(0, Date.now() - then);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function ListingsPage() {
   const supabase = createClient();
   const { activeAccountId } = useAccounts();
@@ -28,10 +44,13 @@ export default function ListingsPage() {
   const [groupsByListingKey, setGroupsByListingKey] = useState<Map<string, string[]>>(
     new Map(),
   );
+  const [earliestAcquiredByListingKey, setEarliestAcquiredByListingKey] = useState<
+    Map<string, string>
+  >(new Map());
   const [loading, setLoading] = useState(true);
 
   // Sorting
-  type SortKey = "card" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "diff" | "profit" | "status";
+  type SortKey = "card" | "grade" | "qty" | "cost" | "market" | "calculated" | "price" | "diff" | "profit" | "status" | "added";
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -167,12 +186,16 @@ export default function ListingsPage() {
         .select("*")
         .eq("account_id", activeAccountId)
         .neq("status", "archived"),
-      // Lots scoped to account; we only need the keying fields to map
-      // group_items → listing variant key.
+      // Lots scoped to account; we need the keying fields to map
+      // group_items → listing variant key, plus acquired_at + quantity_remaining
+      // so we can show the earliest-acquired date for in-stock lots backing
+      // each listing.
       supabase
         .schema("ecom")
         .from("inventory_lots")
-        .select("id, card_product_id, custom_product_id, grading_service, grade")
+        .select(
+          "id, card_product_id, custom_product_id, grading_service, grade, acquired_at, quantity_remaining",
+        )
         .eq("account_id", activeAccountId),
       supabase
         .schema("ecom")
@@ -189,16 +212,29 @@ export default function ListingsPage() {
 
     // Build listing key → unique group names from the lots backing each variant.
     const keyByLotId = new Map<string, string>();
+    const earliestByKey = new Map<string, string>();
     for (const lot of (lotsRes.data ?? []) as {
       id: string;
       card_product_id: string | null;
       custom_product_id: string | null;
       grading_service: string | null;
       grade: string | null;
+      acquired_at: string | null;
+      quantity_remaining: number;
     }[]) {
       const key = `${lot.card_product_id ?? ""}|${lot.custom_product_id ?? ""}|${lot.grading_service ?? ""}|${lot.grade ?? ""}`;
       keyByLotId.set(lot.id, key);
+      // "When was this inventory added" = earliest acquired_at across the
+      // still-in-stock lots backing the listing. Sold-out lots don't count
+      // because they no longer contribute to current inventory.
+      if (lot.acquired_at && lot.quantity_remaining > 0) {
+        const prev = earliestByKey.get(key);
+        if (!prev || lot.acquired_at < prev) {
+          earliestByKey.set(key, lot.acquired_at);
+        }
+      }
     }
+    setEarliestAcquiredByListingKey(earliestByKey);
     const groupNameById = new Map<string, string>();
     for (const g of (groupsRes.data ?? []) as { id: string; name: string }[]) {
       groupNameById.set(g.id, g.name);
@@ -381,6 +417,17 @@ export default function ListingsPage() {
           av = a.listing.status;
           bv = b.listing.status;
           break;
+        case "added": {
+          const keyA = `${a.listing.card_product_id ?? ""}|${a.listing.custom_product_id ?? ""}|${a.listing.grading_service ?? ""}|${a.listing.grade ?? ""}`;
+          const keyB = `${b.listing.card_product_id ?? ""}|${b.listing.custom_product_id ?? ""}|${b.listing.grading_service ?? ""}|${b.listing.grade ?? ""}`;
+          const ts = (key: string) => {
+            const iso = earliestAcquiredByListingKey.get(key);
+            return iso ? new Date(iso).getTime() : -Infinity;
+          };
+          av = ts(keyA);
+          bv = ts(keyB);
+          break;
+        }
       }
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
@@ -405,6 +452,7 @@ export default function ListingsPage() {
     cardNumberFilter,
     nameFilter,
     consignmentFilter,
+    earliestAcquiredByListingKey,
   ]);
 
   // Available grades from current listings (for the filter dropdown)
@@ -1006,6 +1054,7 @@ export default function ListingsPage() {
                 <SortHeader label="Diff" sortKey="diff" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Profit" sortKey="profit" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Status" sortKey="status" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                <SortHeader label="Added" sortKey="added" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
                   Groups
                 </th>
@@ -1211,6 +1260,19 @@ export default function ListingsPage() {
                       >
                         {r.listing.status === "active" ? "Active" : "Draft"}
                       </span>
+                    </td>
+                    {/* Added — earliest acquired_at across in-stock backing lots */}
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {(() => {
+                        const key = `${r.listing.card_product_id ?? ""}|${r.listing.custom_product_id ?? ""}|${r.listing.grading_service ?? ""}|${r.listing.grade ?? ""}`;
+                        const iso = earliestAcquiredByListingKey.get(key) ?? null;
+                        if (!iso) return <span className="text-gray-400">{"—"}</span>;
+                        return (
+                          <span title={new Date(iso).toLocaleString()}>
+                            {relativeTime(iso)}
+                          </span>
+                        );
+                      })()}
                     </td>
                     {/* Groups — union of groups across lots backing this variant */}
                     <td className="px-4 py-3 text-xs">

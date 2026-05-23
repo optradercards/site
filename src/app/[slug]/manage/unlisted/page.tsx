@@ -39,6 +39,7 @@ type CollectionItem = {
   purchase_price_currency: string | null;
   consignor_asking_price_cents: number | null;
   groups: string[];
+  acquired_at: string | null;
   consignor_acceptance:
     | "not_applicable"
     | "pending"
@@ -75,6 +76,22 @@ type PricingRule = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = Math.max(0, Date.now() - then);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
 
 function convertCents(
   cents: number,
@@ -242,7 +259,8 @@ export default function UnlistedPage() {
     | "calculated"
     | "price"
     | "diff"
-    | "profit";
+    | "profit"
+    | "added";
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "name",
     dir: "asc",
@@ -279,7 +297,7 @@ export default function UnlistedPage() {
       .schema("ecom")
       .from("vendor_inventory_summary")
       .select(
-        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance, consignor_asking_price_cents"
+        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance, consignor_asking_price_cents, acquired_at"
       )
       .eq("account_id", activeAccountId)
       .gt("quantity_remaining", 0)
@@ -302,6 +320,7 @@ export default function UnlistedPage() {
       purchase_price_currency: r.acquisition_currency,
       consignor_asking_price_cents: r.consignor_asking_price_cents ?? null,
       groups: [],
+      acquired_at: r.acquired_at ?? null,
       consignor_acceptance: r.consignor_acceptance ?? null,
     }));
 
@@ -616,6 +635,8 @@ export default function UnlistedPage() {
           return r.diff ?? 0;
         case "profit":
           return r.profit ?? 0;
+        case "added":
+          return r.item.acquired_at ? new Date(r.item.acquired_at).getTime() : 0;
         default:
           return 0;
       }
@@ -1312,6 +1333,13 @@ export default function UnlistedPage() {
                   dir={sort.dir}
                   onClick={() => toggleSort("profit")}
                 />
+                <SortTh
+                  label="Added"
+                  align="left"
+                  active={sort.key === "added"}
+                  dir={sort.dir}
+                  onClick={() => toggleSort("added")}
+                />
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
                   Groups
                 </th>
@@ -1477,6 +1505,16 @@ export default function UnlistedPage() {
                       }`}
                     >
                       {fmt(r.profit)}
+                    </td>
+                    {/* Added (inventory acquired_at) */}
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {r.item.acquired_at ? (
+                        <span title={new Date(r.item.acquired_at).toLocaleString()}>
+                          {relativeTime(r.item.acquired_at)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     {/* Groups */}
                     <td className="px-4 py-3 text-xs">
