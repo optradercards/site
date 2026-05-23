@@ -9,6 +9,7 @@ import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { gradeLabel, resolveMarketValue, type EcomListing, type MarketData } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
 import CustomerSearchModal from "./customer-search-modal";
+import InventoryPreviewModal from "./inventory-preview-modal";
 
 // ---------------------------------------------------------------------------
 // In-person Point of Sale.
@@ -366,6 +367,7 @@ export default function SellPage() {
   const [buyerEmail, setBuyerEmail] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [payidRef, setPayidRef] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -800,6 +802,27 @@ export default function SellPage() {
             </div>
           ) : (
             <>
+              {outbound.length > 0 && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setInventoryModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    title="See cost / market / margin for the cards you're selling"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="w-4 h-4"
+                      aria-hidden="true"
+                    >
+                      <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1H3a1 1 0 01-1-1v-6zM8 7a1 1 0 011-1h2a1 1 0 011 1v10a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v13a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                    </svg>
+                    Inventory preview
+                  </button>
+                </div>
+              )}
               <ItemGroup
                 label="Selling to customer"
                 tone="out"
@@ -991,6 +1014,22 @@ export default function SellPage() {
           setBuyerEmail(c.email ?? "");
           setBuyerPhone(c.phone ?? "");
         }}
+      />
+
+      <InventoryPreviewModal
+        isOpen={inventoryModalOpen}
+        onClose={() => setInventoryModalOpen(false)}
+        accountId={activeAccountId}
+        items={outbound.map((it) => ({
+          key: it.key,
+          card_product_id: it.card_product_id,
+          card_name: it.card_name,
+          grading_service: it.grading_service,
+          grade: it.grade,
+          quantity: it.quantity,
+          unit_price_cents: it.unit_price_cents,
+        }))}
+        currency={currency}
       />
     </div>
   );
