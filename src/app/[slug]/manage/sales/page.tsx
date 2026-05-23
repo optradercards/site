@@ -638,23 +638,36 @@ export default function SalesPage() {
                         it.side === "bought" || it.side === "traded_in";
                       const itemSaleCents = it.unit_price_cents * it.quantity;
                       let itemCostCents: number | null = null;
-                      let anyCost = false;
-                      for (const a of it.sale_allocations ?? []) {
-                        const c = allocCostCents(a, it.unit_price_cents);
-                        if (c != null) {
-                          anyCost = true;
-                          itemCostCents = (itemCostCents ?? 0) + c;
+                      if (isInbound) {
+                        // Trade-ins: cost = the credit we gave the buyer
+                        // (market × trade%). For a pure "bought" line where
+                        // the transaction has no trade %, treat the whole
+                        // unit price as cash paid (100%).
+                        const pct =
+                          tx.trade_value_pct != null
+                            ? Number(tx.trade_value_pct)
+                            : 100;
+                        itemCostCents = Math.round(
+                          (itemSaleCents * pct) / 100,
+                        );
+                      } else {
+                        // Outbound: cost = sum of consumed lot allocations.
+                        let anyCost = false;
+                        for (const a of it.sale_allocations ?? []) {
+                          const c = allocCostCents(a, it.unit_price_cents);
+                          if (c != null) {
+                            anyCost = true;
+                            itemCostCents = (itemCostCents ?? 0) + c;
+                          }
                         }
+                        if (!anyCost) itemCostCents = null;
                       }
-                      if (!anyCost) itemCostCents = null;
                       const itemMarginCents =
-                        !isInbound && itemCostCents != null
+                        itemCostCents != null
                           ? itemSaleCents - itemCostCents
                           : null;
                       const itemMarginPct =
-                        !isInbound &&
-                        itemCostCents != null &&
-                        itemCostCents > 0
+                        itemCostCents != null && itemCostCents > 0
                           ? (itemMarginCents! / itemCostCents) * 100
                           : null;
                       return (
@@ -701,31 +714,36 @@ export default function SalesPage() {
                             {it.quantity}
                           </td>
                           <td
-                            className={
-                              isInbound
-                                ? "px-3 py-2 text-right tabular-nums text-gray-500 dark:text-gray-400 whitespace-nowrap text-sm"
-                                : "px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm"
-                            }
+                            className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm"
                             title={
                               isInbound
-                                ? "Trade-in value credited to the customer"
+                                ? "Market value of the card we took in"
                                 : undefined
                             }
                           >
-                            {isInbound ? "−" : ""}
                             {formatPrice(itemSaleCents, sellerCurrency, rates ?? {}, tx.currency)}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm">
-                            {isInbound
-                              ? "—"
-                              : itemCostCents != null
-                                ? formatPrice(itemCostCents, sellerCurrency, rates ?? {}, tx.currency)
-                                : "—"}
+                          <td
+                            className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm"
+                            title={
+                              isInbound
+                                ? "Trade credit we gave the buyer (market × trade %)"
+                                : undefined
+                            }
+                          >
+                            {itemCostCents != null
+                              ? formatPrice(itemCostCents, sellerCurrency, rates ?? {}, tx.currency)
+                              : "—"}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-sm">
-                            {isInbound ? (
-                              "—"
-                            ) : itemMarginCents != null ? (
+                          <td
+                            className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-sm"
+                            title={
+                              isInbound
+                                ? "Spread captured by the trade % (market − credit)"
+                                : undefined
+                            }
+                          >
+                            {itemMarginCents != null ? (
                               <span
                                 className={
                                   itemMarginCents >= 0
