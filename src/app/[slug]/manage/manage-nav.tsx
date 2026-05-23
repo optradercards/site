@@ -165,9 +165,9 @@ export default function ManageNav({
           </Link>
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-8">
-          <aside className="lg:w-56 shrink-0">
-            <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 sticky top-4">
+        <div className="flex flex-col md:flex-row gap-8">
+          <aside className="md:w-56 shrink-0">
+            <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 md:sticky md:top-4">
               <ul className="space-y-0.5">
                 {navItems.map((item) =>
                   item.children && item.children.length > 0 ? (
