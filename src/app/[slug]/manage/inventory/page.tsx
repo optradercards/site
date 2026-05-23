@@ -154,7 +154,9 @@ export default function InventoryPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Filters
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(
+    () => searchParams?.get("q") ?? "",
+  );
   const [sourceFilter, setSourceFilter] = useState<"all" | AcquisitionSource>(() => {
     if (
       sourceParam &&

@@ -22,6 +22,7 @@ import ZoomableImage from "@/components/ZoomableImage";
 
 type Side = "sold" | "bought" | "traded_in" | "traded_out";
 type Allocation = {
+  lot_id: string | null;
   quantity: number;
   acquisition_cost_cents_snapshot: number | null;
   acquisition_currency_snapshot: string | null;
@@ -178,7 +179,7 @@ export default function SaleDetailPage() {
           source_provider, source_id, completed_at, created_at, updated_at,
           transaction_items (
             id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
-            sale_allocations ( quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot,
+            sale_allocations ( lot_id, quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot,
               consignor_split_pct_snapshot, consignor_chargeback_per_unit_snapshot )
           ),
           order_payments ( id, method, amount_cents, currency, reference, status, paid_at )
@@ -627,6 +628,7 @@ export default function SaleDetailPage() {
           tradeValuePct={
             tx.trade_value_pct != null ? Number(tx.trade_value_pct) : null
           }
+          slug={slug}
           editPrices={editDraft?.item_prices ?? null}
           onPriceChange={(id, v) =>
             setEditDraft((d) =>
@@ -650,6 +652,7 @@ export default function SaleDetailPage() {
           tradeValuePct={
             tx.trade_value_pct != null ? Number(tx.trade_value_pct) : null
           }
+          slug={slug}
           editPrices={editDraft?.item_prices ?? null}
           onPriceChange={(id, v) =>
             setEditDraft((d) =>
@@ -761,6 +764,7 @@ function ItemSection({
   discountCents,
   outgoingSubtotalCents,
   tradeValuePct,
+  slug,
   editPrices,
   onPriceChange,
 }: {
@@ -773,6 +777,7 @@ function ItemSection({
   discountCents: number;
   outgoingSubtotalCents: number;
   tradeValuePct: number | null;
+  slug: string;
   editPrices: Record<string, string> | null;
   onPriceChange: (id: string, value: string) => void;
 }) {
@@ -896,6 +901,49 @@ function ItemSection({
                     <span> · {fmt(it.unit_price_cents, txCurrency)} each</span>
                   )}
                 </p>
+                {(() => {
+                  // Outbound: link to each lot we consumed via sale_allocations.
+                  // Inbound: lot was created from this line; deep-link to
+                  // /inventory pre-filtered by the card name so vendor can
+                  // find it. The notes field on the new lot references the
+                  // tx, but there's no FK so we fall back to a search query.
+                  if (isInbound) {
+                    const cardName = card?.name ?? "";
+                    if (!cardName) return null;
+                    const q = encodeURIComponent(cardName);
+                    return (
+                      <p className="text-[11px] mt-1">
+                        <Link
+                          href={`/${slug}/manage/inventory?q=${q}`}
+                          className="text-red-500 hover:text-red-600"
+                        >
+                          → find in inventory
+                        </Link>
+                      </p>
+                    );
+                  }
+                  const lotIds = (it.sale_allocations ?? [])
+                    .map((a) => a.lot_id)
+                    .filter((id): id is string => !!id);
+                  if (lotIds.length === 0) return null;
+                  return (
+                    <p className="text-[11px] mt-1 text-gray-500 dark:text-gray-400">
+                      from{" "}
+                      {lotIds.map((lid, i) => (
+                        <span key={lid}>
+                          {i > 0 && ", "}
+                          <Link
+                            href={`/${slug}/manage/inventory/${lid}`}
+                            className="text-red-500 hover:text-red-600"
+                            title="View this inventory lot"
+                          >
+                            lot {lid.slice(0, 8)}
+                          </Link>
+                        </span>
+                      ))}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="text-right shrink-0">
                 <p
