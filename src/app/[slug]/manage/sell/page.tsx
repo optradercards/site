@@ -802,13 +802,13 @@ export default function SellPage() {
             </div>
           ) : (
             <>
-              {outbound.length > 0 && (
+              {(outbound.length > 0 || inbound.length > 0) && (
                 <div className="flex justify-end">
                   <button
                     type="button"
                     onClick={() => setInventoryModalOpen(true)}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
-                    title="See cost / market / margin for the cards you're selling"
+                    title="See cost, market, margin and existing stock for every card on this invoice"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -1020,8 +1020,9 @@ export default function SellPage() {
         isOpen={inventoryModalOpen}
         onClose={() => setInventoryModalOpen(false)}
         accountId={activeAccountId}
-        items={outbound.map((it) => ({
+        items={[...outbound, ...inbound].map((it) => ({
           key: it.key,
+          direction: it.direction,
           card_product_id: it.card_product_id,
           card_name: it.card_name,
           grading_service: it.grading_service,
