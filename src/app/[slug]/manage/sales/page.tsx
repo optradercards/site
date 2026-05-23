@@ -73,6 +73,9 @@ type SalesTx = {
   total_cents: number;
   trade_value_pct: number | null;
   notes: string | null;
+  buyer_contact:
+    | { name?: string | null; email?: string | null; phone?: string | null }
+    | null;
   completed_at: string | null;
   source_provider: string | null;
   source_id: string | null;
@@ -101,6 +104,29 @@ function sourceLabel(s: string | null): string {
   if (s === "csv_import") return "CSV";
   if (s === "shiny_sold") return "Shiny";
   return s;
+}
+
+// CSV escape: wrap fields containing comma / quote / newline in double
+// quotes, double-up any internal quotes. null/undefined render empty.
+function csvCell(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function downloadCsv(filename: string, headers: string[], rows: unknown[][]) {
+  const lines = [headers.map(csvCell).join(",")];
+  for (const r of rows) lines.push(r.map(csvCell).join(","));
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function sourceBadgeCls(s: string | null): string {
@@ -208,7 +234,7 @@ export default function SalesPage() {
       .select(
         `
           id, status, currency, subtotal_cents, outgoing_subtotal_cents,
-          discount_cents, total_cents, trade_value_pct, notes,
+          discount_cents, total_cents, trade_value_pct, notes, buyer_contact,
           completed_at, source_provider, source_id,
           transaction_items (
             id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
@@ -405,6 +431,53 @@ export default function SalesPage() {
     };
   }, [sortedRows]);
 
+  const exportCsv = useCallback(() => {
+    const headers = [
+      "Date",
+      "Tx ID",
+      "Source",
+      "Items",
+      "Qty",
+      "Currency",
+      "Subtotal",
+      "Discount",
+      "Total",
+      "Cost",
+      "Margin",
+      "Margin %",
+      "Trade %",
+      "Payment methods",
+      "Buyer name",
+      "Buyer email",
+      "Buyer phone",
+      "Notes",
+    ];
+    const toDollars = (cents: number | null | undefined) =>
+      cents == null ? "" : (cents / 100).toFixed(2);
+    const data = sortedRows.map((r) => [
+      r.tx.completed_at ? new Date(r.tx.completed_at).toISOString() : "",
+      r.tx.id,
+      sourceLabel(r.tx.source_provider),
+      r.itemCount,
+      r.totalQty,
+      r.tx.currency,
+      toDollars(r.tx.subtotal_cents),
+      toDollars(r.tx.discount_cents),
+      toDollars(r.tx.total_cents),
+      toDollars(r.costCents),
+      toDollars(r.marginCents),
+      r.marginPct != null ? r.marginPct.toFixed(1) : "",
+      r.tx.trade_value_pct != null ? Number(r.tx.trade_value_pct).toFixed(0) : "",
+      (r.tx.order_payments ?? []).map((p) => p.method).join(";"),
+      r.tx.buyer_contact?.name ?? "",
+      r.tx.buyer_contact?.email ?? "",
+      r.tx.buyer_contact?.phone ?? "",
+      r.tx.notes ?? "",
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    downloadCsv(`sales-${today}.csv`, headers, data);
+  }, [sortedRows]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24 text-gray-500 dark:text-gray-400">
@@ -528,7 +601,7 @@ export default function SalesPage() {
       )}
 
       {/* Summary strip */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 mb-6 flex flex-wrap gap-6 text-sm">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5 mb-6 flex flex-wrap items-center gap-6 text-sm">
         <Counter label="Sales" value={String(sortedRows.length)} />
         <Counter
           label="Revenue"
@@ -557,6 +630,28 @@ export default function SalesPage() {
               : undefined
           }
         />
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={sortedRows.length === 0}
+          className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
+          title="Download the currently filtered + sorted sales as a CSV"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-4 h-4"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 3a.75.75 0 01.75.75v8.69l2.72-2.72a.75.75 0 111.06 1.06l-4 4a.75.75 0 01-1.06 0l-4-4a.75.75 0 111.06-1.06l2.72 2.72V3.75A.75.75 0 0110 3zM3.75 15a.75.75 0 01.75.75v.75a.75.75 0 00.75.75h9.5a.75.75 0 00.75-.75v-.75a.75.75 0 011.5 0v.75A2.25 2.25 0 0114.75 18h-9.5A2.25 2.25 0 013 15.75v-.75a.75.75 0 01.75-.75z"
+              clipRule="evenodd"
+            />
+          </svg>
+          Export CSV ({sortedRows.length})
+        </button>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
