@@ -241,18 +241,15 @@ export default function SalesPage() {
 
   const rows: Row[] = useMemo(() => {
     return txs.map((tx) => {
-      // For mixed sell+trade-in tickets, only outbound items are "sale
-      // lines" so we don't double-count the trade-in as a sale. For a
-      // pure-buy ticket (no outbound items), fall back to showing the
-      // inbound items so the row has something to render — parent
-      // total_cents is negative (cash out for cards), cost is 0 (no
-      // outgoing inventory consumed), margin = sale - 0 = negative,
-      // which correctly shows up as a loss in the P/L for the day.
+      // Show every line on the transaction — sold + traded-in alike — so
+      // mixed tickets surface the trade-in instead of hiding it. The cost /
+      // margin math still keys off outbound items only (trade-ins have no
+      // sale_allocations and aren't consuming inventory).
       const outboundItems = tx.transaction_items.filter(
         (i) => i.side === "sold" || i.side === "traded_out",
       );
       const isPureBuy = outboundItems.length === 0;
-      const items = isPureBuy ? tx.transaction_items : outboundItems;
+      const items = tx.transaction_items;
       const itemCount = items.length;
       const totalQty = items.reduce((s, i) => s + i.quantity, 0);
       const saleCents = tx.total_cents;
@@ -278,7 +275,9 @@ export default function SalesPage() {
         costCents != null && costCents > 0
           ? (marginCents! / costCents) * 100
           : null;
-      const primaryItem = items[0] ?? null;
+      // For the single-item collapsed view prefer an outbound item as the
+      // "primary" card; only fall back to an inbound item on pure buys.
+      const primaryItem = outboundItems[0] ?? items[0] ?? null;
       return {
         tx,
         itemCount,
@@ -634,14 +633,9 @@ export default function SalesPage() {
                         </span>
                       </td>
                     </tr>
-                    {isMulti && isExpanded && (() => {
-                      const out = tx.transaction_items.filter(
-                        (it) => it.side === "sold" || it.side === "traded_out",
-                      );
-                      // Pure-buy ticket: render the inbound items so the
-                      // row's items are visible and the P/L is clear.
-                      return out.length > 0 ? out : tx.transaction_items;
-                    })().map((it) => {
+                    {isMulti && isExpanded && tx.transaction_items.map((it) => {
+                      const isInbound =
+                        it.side === "bought" || it.side === "traded_in";
                       const itemSaleCents = it.unit_price_cents * it.quantity;
                       let itemCostCents: number | null = null;
                       let anyCost = false;
@@ -654,11 +648,13 @@ export default function SalesPage() {
                       }
                       if (!anyCost) itemCostCents = null;
                       const itemMarginCents =
-                        itemCostCents != null
+                        !isInbound && itemCostCents != null
                           ? itemSaleCents - itemCostCents
                           : null;
                       const itemMarginPct =
-                        itemCostCents != null && itemCostCents > 0
+                        !isInbound &&
+                        itemCostCents != null &&
+                        itemCostCents > 0
                           ? (itemMarginCents! / itemCostCents) * 100
                           : null;
                       return (
@@ -679,14 +675,24 @@ export default function SalesPage() {
                             )}
                           </td>
                           <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
-                            <p className="font-medium text-sm">
-                              {it.card?.name ?? "(unknown card)"}
-                              {it.card?.card_number && (
-                                <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
-                                  #{it.card.card_number}
+                            <div className="flex items-center gap-2">
+                              {isInbound && (
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
+                                  title="Card we took in (trade-in or buy)"
+                                >
+                                  Trade-in
                                 </span>
                               )}
-                            </p>
+                              <p className="font-medium text-sm">
+                                {it.card?.name ?? "(unknown card)"}
+                                {it.card?.card_number && (
+                                  <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                                    #{it.card.card_number}
+                                  </span>
+                                )}
+                              </p>
+                            </div>
                           </td>
                           <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-sm">
                             {gradeLabel(it.grading_service, it.grade)}
@@ -694,16 +700,32 @@ export default function SalesPage() {
                           <td className="px-3 py-2 text-right tabular-nums text-sm">
                             {it.quantity}
                           </td>
-                          <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm">
+                          <td
+                            className={
+                              isInbound
+                                ? "px-3 py-2 text-right tabular-nums text-gray-500 dark:text-gray-400 whitespace-nowrap text-sm"
+                                : "px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm"
+                            }
+                            title={
+                              isInbound
+                                ? "Trade-in value credited to the customer"
+                                : undefined
+                            }
+                          >
+                            {isInbound ? "−" : ""}
                             {formatPrice(itemSaleCents, sellerCurrency, rates ?? {}, tx.currency)}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm">
-                            {itemCostCents != null
-                              ? formatPrice(itemCostCents, sellerCurrency, rates ?? {}, tx.currency)
-                              : "—"}
+                            {isInbound
+                              ? "—"
+                              : itemCostCents != null
+                                ? formatPrice(itemCostCents, sellerCurrency, rates ?? {}, tx.currency)
+                                : "—"}
                           </td>
                           <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-sm">
-                            {itemMarginCents != null ? (
+                            {isInbound ? (
+                              "—"
+                            ) : itemMarginCents != null ? (
                               <span
                                 className={
                                   itemMarginCents >= 0
