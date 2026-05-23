@@ -14,6 +14,21 @@ interface CollectrItem {
   card_number?: string;
   product_sub_type?: string;       // "Foil" | "Normal" | …
   rarity?: string;
+  // Collectr returns market price as a string ("0.05") or sometimes as a
+  // number. We render conditionally; if it isn't on the row at all the
+  // column just shows "—".
+  market_price?: string | number | null;
+  price?: string | number | null;
+}
+
+function formatCollectrPrice(item: CollectrItem): string {
+  const raw = item.market_price ?? item.price;
+  if (raw == null || raw === "") return "—";
+  // String form might already include "$" or whitespace; strip and re-format.
+  const cleaned = String(raw).replace(/[^\d.-]/g, "");
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return String(raw);
+  return `$${n.toFixed(2)}`;
 }
 
 // The id we use for both React keys and the import source_id. Prefer
@@ -328,6 +343,7 @@ export default function SearchCollectrPage() {
                   <th className="px-3 py-2">Brand</th>
                   <th className="px-3 py-2 whitespace-nowrap">Card #</th>
                   <th className="px-3 py-2 whitespace-nowrap">Rarity</th>
+                  <th className="px-3 py-2 whitespace-nowrap text-right">Price</th>
                   <th className="px-3 py-2 whitespace-nowrap">Collectr id</th>
                 </tr>
               </thead>
@@ -398,6 +414,9 @@ export default function SearchCollectrPage() {
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap text-xs">
                         {item.rarity ?? "—"}
+                      </td>
+                      <td className="px-3 py-2 whitespace-nowrap text-xs text-right tabular-nums text-gray-900 dark:text-gray-100">
+                        {formatCollectrPrice(item)}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap font-mono text-[10px] text-gray-500 dark:text-gray-400">
                         {rid ? rid.slice(0, 12) + "…" : "—"}
