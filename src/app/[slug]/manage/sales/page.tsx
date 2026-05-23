@@ -636,20 +636,21 @@ export default function SalesPage() {
                     {isMulti && isExpanded && tx.transaction_items.map((it) => {
                       const isInbound =
                         it.side === "bought" || it.side === "traded_in";
-                      const itemSaleCents = it.unit_price_cents * it.quantity;
+                      const rawLineCents = it.unit_price_cents * it.quantity;
+                      // Trade-ins: show the line as cash impact (credit out,
+                      // negative) with cost 0 → margin lands as the same
+                      // negative figure. The signs sum cleanly across the
+                      // transaction so totals stay consistent.
+                      const pct =
+                        tx.trade_value_pct != null
+                          ? Number(tx.trade_value_pct)
+                          : 100;
+                      const itemSaleCents = isInbound
+                        ? -Math.round((rawLineCents * pct) / 100)
+                        : rawLineCents;
                       let itemCostCents: number | null = null;
                       if (isInbound) {
-                        // Trade-ins: cost = the credit we gave the buyer
-                        // (market × trade%). For a pure "bought" line where
-                        // the transaction has no trade %, treat the whole
-                        // unit price as cash paid (100%).
-                        const pct =
-                          tx.trade_value_pct != null
-                            ? Number(tx.trade_value_pct)
-                            : 100;
-                        itemCostCents = Math.round(
-                          (itemSaleCents * pct) / 100,
-                        );
+                        itemCostCents = 0;
                       } else {
                         // Outbound: cost = sum of consumed lot allocations.
                         let anyCost = false;
@@ -714,10 +715,14 @@ export default function SalesPage() {
                             {it.quantity}
                           </td>
                           <td
-                            className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm"
+                            className={
+                              isInbound
+                                ? "px-3 py-2 text-right tabular-nums text-red-600 dark:text-red-400 whitespace-nowrap text-sm"
+                                : "px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm"
+                            }
                             title={
                               isInbound
-                                ? "Market value of the card we took in"
+                                ? "Trade credit we gave the buyer (market × trade %)"
                                 : undefined
                             }
                           >
@@ -727,7 +732,7 @@ export default function SalesPage() {
                             className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm"
                             title={
                               isInbound
-                                ? "Trade credit we gave the buyer (market × trade %)"
+                                ? "No inventory consumed for trade-ins"
                                 : undefined
                             }
                           >
@@ -737,11 +742,6 @@ export default function SalesPage() {
                           </td>
                           <td
                             className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-sm"
-                            title={
-                              isInbound
-                                ? "Spread captured by the trade % (market − credit)"
-                                : undefined
-                            }
                           >
                             {itemMarginCents != null ? (
                               <span
