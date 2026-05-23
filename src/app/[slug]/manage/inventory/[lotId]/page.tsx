@@ -75,7 +75,19 @@ type SaleAllocationRow = {
   acquisition_currency_snapshot: string | null;
   created_at: string;
   transaction_item_id: string;
+  transaction_items: { transaction_id: string } | null;
 };
+
+// Trade-in lots are created by /sell with notes like
+// "Trade-in from sell ticket {tx.id} on {date}". Pull the UUID out so we
+// can offer a back-link to the source sale.
+const UUID_RE =
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+function sourceSaleIdFromNotes(notes: string | null): string | null {
+  if (!notes) return null;
+  const m = notes.match(UUID_RE);
+  return m ? m[0] : null;
+}
 
 export default function InventoryLotPage() {
   const supabase = createClient();
@@ -180,7 +192,8 @@ export default function InventoryLotPage() {
         .schema("ecom")
         .from("sale_allocations")
         .select(
-          "id, quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot, created_at, transaction_item_id",
+          "id, quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot, created_at, transaction_item_id, " +
+            "transaction_items!inner ( transaction_id )",
         )
         .eq("lot_id", lotId)
         .order("created_at", { ascending: false }),
@@ -369,7 +382,9 @@ export default function InventoryLotPage() {
           <Stat label="Acquired" value={new Date(lot.acquired_at).toLocaleDateString()} />
         </dl>
 
-        {(lot.purchase_id || lot.source_lot_id) && (
+        {(lot.purchase_id ||
+          lot.source_lot_id ||
+          sourceSaleIdFromNotes(lot.notes)) && (
           <div className="mt-4 flex flex-wrap gap-3 text-sm">
             {lot.purchase_id && (
               <Link
@@ -387,6 +402,19 @@ export default function InventoryLotPage() {
                 View source lot (pre-grading) &rarr;
               </Link>
             )}
+            {(() => {
+              const sourceSaleId = sourceSaleIdFromNotes(lot.notes);
+              if (!sourceSaleId) return null;
+              return (
+                <Link
+                  href={`/${slug}/manage/sales/${sourceSaleId}`}
+                  className="text-red-500 hover:text-red-600"
+                  title="The sale this lot was created on"
+                >
+                  View source sale &rarr;
+                </Link>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -558,8 +586,20 @@ export default function InventoryLotPage() {
                     <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-200 tabular-nums">
                       {fmtSnapshot(s.acquisition_cost_cents_snapshot, s.acquisition_currency_snapshot)}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
-                      {s.transaction_item_id.slice(0, 8)}
+                    <td className="px-3 py-2 text-xs font-mono">
+                      {s.transaction_items?.transaction_id ? (
+                        <Link
+                          href={`/${slug}/manage/sales/${s.transaction_items.transaction_id}`}
+                          className="text-red-500 hover:text-red-600"
+                          title="Open the sale"
+                        >
+                          sale {s.transaction_items.transaction_id.slice(0, 8)}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {s.transaction_item_id.slice(0, 8)}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
