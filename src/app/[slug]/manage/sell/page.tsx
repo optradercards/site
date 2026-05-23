@@ -185,7 +185,7 @@ export default function SellPage() {
         .or(`name.ilike.%${catSearch.trim()}%,card_number.ilike.%${catSearch.trim()}%`)
         .limit(30);
       if (!cancelled) {
-        setCatResults((data ?? []) as CatalogProduct[]);
+        setCatResults((data ?? []) as unknown as CatalogProduct[]);
         setCatSearching(false);
       }
     })();
