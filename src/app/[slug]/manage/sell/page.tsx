@@ -430,7 +430,19 @@ export default function SellPage() {
       setInvSearchInput("");
       setCatSearchInput("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not complete sale");
+      // Supabase errors come back as plain objects, not Error instances —
+      // dig out the message + code so we can actually see what failed.
+      console.error("complete-sale failed:", e);
+      let msg = "Could not complete sale";
+      if (e && typeof e === "object") {
+        const err = e as { message?: string; details?: string; hint?: string; code?: string };
+        const parts = [err.message, err.details, err.hint, err.code ? `(${err.code})` : null]
+          .filter(Boolean);
+        if (parts.length > 0) msg = parts.join(" — ");
+      } else if (e instanceof Error) {
+        msg = e.message;
+      }
+      setError(msg);
     } finally {
       setCompleting(false);
     }

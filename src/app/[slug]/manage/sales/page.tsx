@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -32,6 +32,7 @@ type CardLite = {
 
 type SalesItem = {
   id: string;
+  side: "sold" | "bought" | "traded_in" | "traded_out";
   card_product_id: string | null;
   grading_service: string | null;
   grade: string | null;
@@ -95,6 +96,15 @@ export default function SalesPage() {
   const sellerCurrency = profileData?.profile?.default_currency ?? "AUD";
 
   const [txs, setTxs] = useState<SalesTx[]>([]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const toggleExpanded = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,7 +137,7 @@ export default function SalesPage() {
           id, status, currency, subtotal_cents, total_cents, notes,
           completed_at, source_provider, source_id,
           transaction_items (
-            id, card_product_id, grading_service, grade, quantity, unit_price_cents,
+            id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
             sale_allocations ( quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot )
           )
         `,
@@ -183,7 +193,12 @@ export default function SalesPage() {
 
   const rows: Row[] = useMemo(() => {
     return txs.map((tx) => {
-      const items = tx.transaction_items;
+      // Only outbound items count as "sold" for this view. Trade-ins
+      // (traded_in / bought) decrement cash net via tx.total_cents but
+      // aren't sale line items themselves.
+      const items = tx.transaction_items.filter(
+        (i) => i.side === "sold" || i.side === "traded_out",
+      );
       const itemCount = items.length;
       const totalQty = items.reduce((s, i) => s + i.quantity, 0);
       const saleCents = tx.total_cents;
@@ -419,8 +434,10 @@ export default function SalesPage() {
                   const tx = r.tx;
                   const item = r.primaryItem;
                   const isMulti = r.itemCount > 1;
+                  const isExpanded = expandedIds.has(tx.id);
                   return (
-                    <tr key={tx.id} className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/30">
+                    <Fragment key={tx.id}>
+                    <tr className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/30">
                       <td className="px-3 py-3 text-gray-700 dark:text-gray-300 whitespace-nowrap">
                         {tx.completed_at
                           ? new Date(tx.completed_at).toLocaleDateString()
@@ -439,9 +456,17 @@ export default function SalesPage() {
                       </td>
                       <td className="px-3 py-3 text-gray-900 dark:text-gray-100">
                         {isMulti ? (
-                          <p className="font-medium">
-                            {r.itemCount} items
-                          </p>
+                          <button
+                            type="button"
+                            onClick={() => toggleExpanded(tx.id)}
+                            className="flex items-center gap-1.5 font-medium text-left hover:text-red-600 dark:hover:text-red-400"
+                            aria-expanded={isExpanded}
+                          >
+                            <span className="text-gray-400 dark:text-gray-500 text-xs leading-none w-3 inline-block">
+                              {isExpanded ? "▼" : "▶"}
+                            </span>
+                            <span>{r.itemCount} items</span>
+                          </button>
                         ) : (
                           <>
                             <p className="font-medium">
@@ -505,6 +530,96 @@ export default function SalesPage() {
                         </span>
                       </td>
                     </tr>
+                    {isMulti && isExpanded && tx.transaction_items
+                      .filter((it) => it.side === "sold" || it.side === "traded_out")
+                      .map((it) => {
+                      const itemSaleCents = it.unit_price_cents * it.quantity;
+                      let itemCostCents: number | null = null;
+                      let anyCost = false;
+                      for (const a of it.sale_allocations ?? []) {
+                        if (a.acquisition_cost_cents_snapshot != null) {
+                          anyCost = true;
+                          itemCostCents =
+                            (itemCostCents ?? 0) +
+                            a.acquisition_cost_cents_snapshot * a.quantity;
+                        }
+                      }
+                      if (!anyCost) itemCostCents = null;
+                      const itemMarginCents =
+                        itemCostCents != null
+                          ? itemSaleCents - itemCostCents
+                          : null;
+                      const itemMarginPct =
+                        itemCostCents != null && itemCostCents > 0
+                          ? (itemMarginCents! / itemCostCents) * 100
+                          : null;
+                      return (
+                        <tr
+                          key={it.id}
+                          className="align-top bg-gray-50/60 dark:bg-gray-900/30"
+                        >
+                          <td className="px-3 py-2"></td>
+                          <td className="px-3 py-2">
+                            {it.card?.image_url ? (
+                              <ZoomableImage
+                                src={it.card.image_url}
+                                alt={it.card.name ?? ""}
+                                className="w-10 h-14 object-contain rounded"
+                              />
+                            ) : (
+                              <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
+                            <p className="font-medium text-sm">
+                              {it.card?.name ?? "(unknown card)"}
+                              {it.card?.card_number && (
+                                <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                                  #{it.card.card_number}
+                                </span>
+                              )}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-sm">
+                            {gradeLabel(it.grading_service, it.grade)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-sm">
+                            {it.quantity}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-900 dark:text-gray-100 whitespace-nowrap text-sm">
+                            {formatPrice(itemSaleCents, sellerCurrency, rates ?? {}, tx.currency)}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm">
+                            {itemCostCents != null
+                              ? formatPrice(itemCostCents, sellerCurrency, rates ?? {}, tx.currency)
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-sm">
+                            {itemMarginCents != null ? (
+                              <span
+                                className={
+                                  itemMarginCents >= 0
+                                    ? "text-green-600 dark:text-green-400"
+                                    : "text-red-600 dark:text-red-400"
+                                }
+                              >
+                                {formatPrice(itemMarginCents, sellerCurrency, rates ?? {}, tx.currency)}
+                                {itemMarginPct != null && (
+                                  <span className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+                                    ({itemMarginPct >= 0 ? "+" : ""}
+                                    {itemMarginPct.toFixed(0)}%)
+                                  </span>
+                                )}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
+                          <td className="px-3 py-2"></td>
+                        </tr>
+                      );
+                    })}
+                    </Fragment>
                   );
                 })}
               </tbody>
