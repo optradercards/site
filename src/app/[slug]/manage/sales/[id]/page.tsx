@@ -131,6 +131,7 @@ export default function SaleDetailPage() {
     buyer_phone: string;
     notes: string;
     discount_dollars: string;
+    trade_value_pct: string; // percent as a string, e.g. "75"
     item_prices: Record<string, string>; // item_id → dollar string
     payment_method: string;
     payment_reference: string;
@@ -233,6 +234,8 @@ export default function SaleDetailPage() {
       buyer_phone: tx.buyer_contact?.phone ?? "",
       notes: tx.notes ?? "",
       discount_dollars: (tx.discount_cents / 100).toFixed(2),
+      trade_value_pct:
+        tx.trade_value_pct != null ? String(tx.trade_value_pct) : "",
       item_prices: Object.fromEntries(
         tx.transaction_items.map((it) => [
           it.id,
@@ -270,6 +273,12 @@ export default function SaleDetailPage() {
       };
       const buyerJson =
         buyer.name || buyer.email || buyer.phone ? buyer : null;
+      const pctTrim = editDraft.trade_value_pct.trim();
+      const pctNum = pctTrim === "" ? null : parseFloat(pctTrim);
+      const newTradePct =
+        pctNum != null && Number.isFinite(pctNum) && pctNum >= 0 && pctNum <= 200
+          ? pctNum
+          : null;
       const { error: txErr } = await supabase
         .schema("ecom")
         .from("transactions")
@@ -277,6 +286,7 @@ export default function SaleDetailPage() {
           notes: editDraft.notes.trim() || null,
           buyer_contact: buyerJson,
           discount_cents: newDiscount,
+          trade_value_pct: newTradePct,
         })
         .eq("id", tx.id);
       if (txErr) throw txErr;
@@ -469,7 +479,7 @@ export default function SaleDetailPage() {
         </dl>
         {editDraft ? (
           <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className="block text-sm">
+            <label className="block text-sm md:row-span-2">
               <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
                 Notes
               </span>
@@ -500,6 +510,33 @@ export default function SaleDetailPage() {
               />
               <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">
                 Subtracted from the subtotal. Triggers recompute the total.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Trade %
+              </span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={editDraft.trade_value_pct}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v !== "" && !/^\d*\.?\d{0,2}$/.test(v)) return;
+                    setEditDraft({ ...editDraft, trade_value_pct: v });
+                  }}
+                  placeholder="75"
+                  className="block w-24 px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-right tabular-nums"
+                />
+                <span className="text-sm text-gray-500 dark:text-gray-400">%</span>
+              </div>
+              <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                Fraction of market value credited per trade-in. Leave blank
+                for none. Changing this updates the displayed cost on
+                trade-in lines but does NOT alter the cost basis on the
+                inventory lots already created from those trade-ins — edit
+                those on /inventory if needed.
               </span>
             </label>
           </div>
