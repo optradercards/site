@@ -956,7 +956,9 @@ function ItemGroup({
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                       {it.listing_id
                         ? gradeLabel(it.grading_service, it.grade)
-                        : "Trade-in from buyer"}
+                        : it.grading_service && it.grading_service !== "ungraded"
+                          ? `Trade-in · ${gradeLabel(it.grading_service, it.grade)}`
+                          : "Trade-in from buyer"}
                     </p>
                   </div>
 
@@ -1009,6 +1011,58 @@ function ItemGroup({
                       </button>
                     </div>
                   </div>
+
+                  {/* Grading — only for trade-ins. Existing listings come in
+                      with their grade locked, but a buyer might trade in a
+                      graded card we don't already stock. */}
+                  {!it.listing_id && (
+                    <>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                          Grading
+                        </label>
+                        <select
+                          value={it.grading_service ?? "ungraded"}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "ungraded") {
+                              onUpdate(it.key, {
+                                grading_service: null,
+                                grade: null,
+                              });
+                            } else {
+                              onUpdate(it.key, { grading_service: v });
+                            }
+                          }}
+                          className="h-11 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-base text-gray-900 dark:text-gray-100"
+                        >
+                          <option value="ungraded">Ungraded</option>
+                          <option value="psa">PSA</option>
+                          <option value="bgs">BGS</option>
+                          <option value="cgc">CGC</option>
+                          <option value="sgc">SGC</option>
+                        </select>
+                      </div>
+                      {it.grading_service && it.grading_service !== "ungraded" && (
+                        <div>
+                          <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                            Grade
+                          </label>
+                          <input
+                            type="text"
+                            value={it.grade ?? ""}
+                            onChange={(e) =>
+                              onUpdate(it.key, {
+                                grade: e.target.value || null,
+                              })
+                            }
+                            placeholder="10"
+                            className="w-16 h-11 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 text-base text-center text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
 
                   {/* Unit price */}
                   <div>
