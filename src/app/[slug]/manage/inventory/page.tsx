@@ -40,6 +40,8 @@ type InventoryRow = {
   acquisition_currency: string;
   acquisition_source: AcquisitionSource;
   acquired_at: string;
+  created_at: string | null;
+  updated_at: string | null;
   consignor_account_id: string | null;
   consignor_name: string | null;
   consignor_split_pct: number | null;
@@ -104,6 +106,21 @@ function listingKey(
   return `${cardId ?? ""}|${customId ?? ""}|${service ?? ""}|${grade ?? ""}`;
 }
 
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return "—";
+  const diff = Math.max(0, Date.now() - then);
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 export default function InventoryPage() {
   const supabase = createClient();
   const { activeAccountId } = useAccounts();
@@ -132,6 +149,8 @@ export default function InventoryPage() {
   const [groups, setGroups] = useState<GroupRow[]>([]);
   const [groupLinks, setGroupLinks] = useState<GroupItemLink[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingLotId, setDeletingLotId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -146,8 +165,10 @@ export default function InventoryPage() {
   });
   const [consignedOnly, setConsignedOnly] = useState(false);
   const [listedMode, setListedMode] = useState<"all" | "listed" | "unlisted">("all");
+  // "Updated since" — yyyy-mm-dd. Empty = no filter.
+  const [updatedSince, setUpdatedSince] = useState<string>("");
 
-  type SortCol = "card" | "grade" | "qty" | "cost" | "market" | "source";
+  type SortCol = "card" | "grade" | "qty" | "cost" | "market" | "source" | "acquired" | "updated";
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
     null,
   );
@@ -255,6 +276,39 @@ export default function InventoryPage() {
     loadData();
   }, [loadData]);
 
+  const handleDelete = useCallback(
+    async (lotId: string, name: string | null) => {
+      const label = name?.trim() ? `"${name}"` : "this lot";
+      if (
+        !window.confirm(
+          `Permanently delete ${label}? This can't be undone — only do this for lots that were added by mistake.`,
+        )
+      ) {
+        return;
+      }
+      setDeletingLotId(lotId);
+      setDeleteError(null);
+      const { error } = await supabase
+        .schema("ecom")
+        .from("inventory_lots")
+        .delete()
+        .eq("id", lotId);
+      setDeletingLotId(null);
+      if (error) {
+        if (error.code === "23503") {
+          setDeleteError(
+            `Can't delete ${label} — it's already been sold from or is referenced by other records. Adjust quantity on the edit page instead.`,
+          );
+        } else {
+          setDeleteError(`Delete failed: ${error.message}`);
+        }
+        return;
+      }
+      setRows((prev) => prev.filter((r) => r.lot_id !== lotId));
+    },
+    [supabase],
+  );
+
   const groupNameById = useMemo(() => {
     const m = new Map<string, string>();
     for (const g of groups) m.set(g.id, g.name);
@@ -289,9 +343,15 @@ export default function InventoryPage() {
         if (listedMode === "listed" && !isListed) return false;
         if (listedMode === "unlisted" && isListed) return false;
       }
+      if (updatedSince) {
+        // Compare ISO date strings — yyyy-mm-dd vs updated_at lexicographically.
+        const sinceIso = updatedSince + "T00:00:00";
+        const u = r.updated_at ?? "";
+        if (u < sinceIso) return false;
+      }
       return true;
     });
-  }, [rows, sourceFilter, consignedOnly, search, listedMode, listedKeys]);
+  }, [rows, sourceFilter, consignedOnly, search, listedMode, listedKeys, updatedSince]);
 
   const sortedRows = useMemo(() => {
     if (!sort) return filteredRows;
@@ -332,6 +392,10 @@ export default function InventoryPage() {
           return marketUsdFor(r);
         case "source":
           return r.acquisition_source;
+        case "acquired":
+          return r.acquired_at ?? "";
+        case "updated":
+          return r.updated_at ?? "";
       }
     };
     return [...filteredRows].sort((a, b) => {
@@ -441,8 +505,44 @@ export default function InventoryPage() {
               Consigned only
             </span>
           </label>
+          <label className="block">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">
+              Updated since
+            </span>
+            <div className="mt-1 flex items-center gap-1">
+              <input
+                type="date"
+                value={updatedSince}
+                onChange={(e) => setUpdatedSince(e.target.value)}
+                className="block rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+              />
+              {updatedSince && (
+                <button
+                  type="button"
+                  onClick={() => setUpdatedSince("")}
+                  className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 underline"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </label>
         </div>
       </div>
+
+      {deleteError && (
+        <div className="mb-4 flex items-start justify-between gap-3 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/30 p-3 text-sm text-red-700 dark:text-red-300">
+          <span>{deleteError}</span>
+          <button
+            type="button"
+            onClick={() => setDeleteError(null)}
+            className="shrink-0 text-red-500 hover:text-red-700 dark:hover:text-red-200"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       {filteredRows.length === 0 ? (
@@ -465,6 +565,7 @@ export default function InventoryPage() {
                 <SortTh col="source" align="left" sort={sort} onToggle={toggleSort}>Source</SortTh>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Groups</th>
+                <SortTh col="updated" align="left" sort={sort} onToggle={toggleSort}>Updated</SortTh>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -600,13 +701,31 @@ export default function InventoryPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="px-4 py-3 text-xs text-gray-600 dark:text-gray-400 whitespace-nowrap">
+                      {r.updated_at ? (
+                        <span title={new Date(r.updated_at).toLocaleString()}>
+                          {relativeTime(r.updated_at)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       <Link
                         href={`/${slug}/manage/inventory/${r.lot_id}`}
                         className="text-sm font-medium text-red-500 hover:text-red-600"
                       >
                         Edit
                       </Link>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(r.lot_id, r.product_name)}
+                        disabled={deletingLotId === r.lot_id}
+                        className="ml-3 text-sm font-medium text-gray-400 hover:text-red-600 disabled:opacity-50"
+                        title="Permanently delete this lot"
+                      >
+                        {deletingLotId === r.lot_id ? "Deleting…" : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 );
