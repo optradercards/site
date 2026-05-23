@@ -8,6 +8,7 @@ import { useAccounts } from "@/contexts/AccountContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
+import { lineDiscountShareCents } from "@/lib/transactions";
 import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
@@ -67,7 +68,10 @@ type SalesTx = {
   status: string;
   currency: string;
   subtotal_cents: number;
+  outgoing_subtotal_cents: number;
+  discount_cents: number;
   total_cents: number;
+  trade_value_pct: number | null;
   notes: string | null;
   completed_at: string | null;
   source_provider: string | null;
@@ -181,7 +185,8 @@ export default function SalesPage() {
       .from("transactions")
       .select(
         `
-          id, status, currency, subtotal_cents, total_cents, notes,
+          id, status, currency, subtotal_cents, outgoing_subtotal_cents,
+          discount_cents, total_cents, trade_value_pct, notes,
           completed_at, source_provider, source_id,
           transaction_items (
             id, side, card_product_id, grading_service, grade, quantity, unit_price_cents,
@@ -637,17 +642,25 @@ export default function SalesPage() {
                       const isInbound =
                         it.side === "bought" || it.side === "traded_in";
                       const rawLineCents = it.unit_price_cents * it.quantity;
-                      // Trade-ins: show the line as cash impact (credit out,
-                      // negative) with cost 0 → margin lands as the same
-                      // negative figure. The signs sum cleanly across the
-                      // transaction so totals stay consistent.
+                      // Trade-ins: line value = cash impact (credit out,
+                      // negative) with cost 0. Outbound: line value = sale
+                      // - pro-rata discount share for the line.
                       const pct =
                         tx.trade_value_pct != null
                           ? Number(tx.trade_value_pct)
                           : 100;
+                      const lineDiscount = isInbound
+                        ? 0
+                        : lineDiscountShareCents(
+                            it.unit_price_cents,
+                            it.quantity,
+                            it.side,
+                            tx.discount_cents ?? 0,
+                            tx.outgoing_subtotal_cents ?? 0,
+                          );
                       const itemSaleCents = isInbound
                         ? -Math.round((rawLineCents * pct) / 100)
-                        : rawLineCents;
+                        : rawLineCents - lineDiscount;
                       let itemCostCents: number | null = null;
                       if (isInbound) {
                         itemCostCents = 0;
@@ -723,10 +736,18 @@ export default function SalesPage() {
                             title={
                               isInbound
                                 ? "Trade credit we gave the buyer (market × trade %)"
-                                : undefined
+                                : lineDiscount > 0
+                                  ? `Line absorbed ${formatPrice(lineDiscount, sellerCurrency, rates ?? {}, tx.currency)} of the transaction discount`
+                                  : undefined
                             }
                           >
                             {formatPrice(itemSaleCents, sellerCurrency, rates ?? {}, tx.currency)}
+                            {!isInbound && lineDiscount > 0 && (
+                              <span className="block text-[10px] text-amber-700 dark:text-amber-400">
+                                {formatPrice(rawLineCents, sellerCurrency, rates ?? {}, tx.currency)} −{" "}
+                                {formatPrice(lineDiscount, sellerCurrency, rates ?? {}, tx.currency)}
+                              </span>
+                            )}
                           </td>
                           <td
                             className="px-3 py-2 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap text-sm"
