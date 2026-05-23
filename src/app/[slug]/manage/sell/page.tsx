@@ -8,6 +8,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { gradeLabel, resolveMarketValue, type EcomListing, type MarketData } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
+import CustomerSearchModal from "./customer-search-modal";
 
 // ---------------------------------------------------------------------------
 // In-person Point of Sale.
@@ -337,6 +338,7 @@ export default function SellPage() {
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [payidRef, setPayidRef] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -545,10 +547,33 @@ export default function SellPage() {
 
       {/* Invoice header — customer + trade percentage */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 md:p-8 mb-6">
-        <div className="flex items-baseline justify-between mb-5 pb-4 border-b border-gray-100 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-            Customer
-          </h2>
+        <div className="flex items-center justify-between mb-5 pb-4 border-b border-gray-100 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+              Customer
+            </h2>
+            <button
+              type="button"
+              onClick={() => setCustomerModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
+              title="Find an existing customer"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="w-4 h-4"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Find existing
+            </button>
+          </div>
           <span className="text-xs uppercase tracking-wider text-gray-400 dark:text-gray-500">
             New invoice
           </span>
@@ -877,6 +902,17 @@ export default function SellPage() {
           </p>
         </aside>
       </div>
+
+      <CustomerSearchModal
+        isOpen={customerModalOpen}
+        onClose={() => setCustomerModalOpen(false)}
+        accountId={activeAccountId}
+        onSelect={(c) => {
+          setBuyerName(c.name ?? "");
+          setBuyerEmail(c.email ?? "");
+          setBuyerPhone(c.phone ?? "");
+        }}
+      />
     </div>
   );
 }
