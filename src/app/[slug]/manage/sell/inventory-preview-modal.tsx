@@ -21,6 +21,7 @@ type InventoryLot = {
   acquired_at: string;
   consignor_name: string | null;
   consignor_split_pct: number | null;
+  consignor_chargeback_per_unit_cents: number | null;
 };
 
 export type CartItemForPreview = {
@@ -82,7 +83,8 @@ export default function InventoryPreviewModal({
           .select(
             "id, card_product_id, grading_service, grade, quantity_remaining, " +
               "acquisition_cost_cents, acquisition_currency, acquisition_source, " +
-              "acquired_at, consignor_name, consignor_split_pct",
+              "acquired_at, consignor_name, consignor_split_pct, " +
+              "consignor_chargeback_per_unit_cents",
           )
           .eq("account_id", accountId)
           .in("card_product_id", productIds)
@@ -183,6 +185,9 @@ export default function InventoryPreviewModal({
                 const lineTotal = item.unit_price_cents * item.quantity;
 
                 // Outbound (selling): FIFO walk to estimate cost + margin.
+                // Consigned lots: vendor's cost is what we'll owe the
+                // consignor at sale time = sale_price × split% − chargeback.
+                // Owned lots: cost = lot.acquisition_cost_cents (what we paid).
                 let qtyToCover = item.quantity;
                 let estCostCents = 0;
                 let costGap = false;
@@ -190,7 +195,15 @@ export default function InventoryPreviewModal({
                   for (const lot of itemLots) {
                     if (qtyToCover <= 0) break;
                     const take = Math.min(qtyToCover, lot.quantity_remaining);
-                    if (lot.acquisition_cost_cents == null) {
+                    if (lot.consignor_split_pct != null) {
+                      const gross = item.unit_price_cents * take;
+                      const payout = Math.round(
+                        (gross * Number(lot.consignor_split_pct)) / 100,
+                      );
+                      const chargeback =
+                        (lot.consignor_chargeback_per_unit_cents ?? 0) * take;
+                      estCostCents += Math.max(0, payout - chargeback);
+                    } else if (lot.acquisition_cost_cents == null) {
                       costGap = true;
                     } else {
                       estCostCents += lot.acquisition_cost_cents * take;
@@ -307,25 +320,45 @@ export default function InventoryPreviewModal({
                       </p>
                     ) : (
                       <ul className="mt-2 text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                        {itemLots.map((lot) => (
-                          <li
-                            key={lot.id}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <span className="truncate">
-                              {new Date(lot.acquired_at).toLocaleDateString()}{" "}
-                              · {lot.acquisition_source.replace(/_/g, " ")}
-                              {lot.consignor_name &&
-                                ` · ${lot.consignor_name}${lot.consignor_split_pct != null ? ` ${lot.consignor_split_pct}%` : ""}`}
-                            </span>
-                            <span className="font-mono tabular-nums shrink-0">
-                              ×{lot.quantity_remaining}
-                              {lot.acquisition_cost_cents != null
-                                ? ` @ ${formatPrice(lot.acquisition_cost_cents, lot.acquisition_currency, {}, lot.acquisition_currency)}`
-                                : " · cost unknown"}
-                            </span>
-                          </li>
-                        ))}
+                        {itemLots.map((lot) => {
+                          const isConsigned = lot.consignor_split_pct != null;
+                          // For consigned lots show the projected per-unit
+                          // payout at the cart's current price, not the
+                          // (zero) acquisition cost.
+                          const consignedPerUnit = isConsigned
+                            ? Math.max(
+                                0,
+                                Math.round(
+                                  (item.unit_price_cents *
+                                    Number(lot.consignor_split_pct)) /
+                                    100,
+                                ) -
+                                  (lot.consignor_chargeback_per_unit_cents ??
+                                    0),
+                              )
+                            : null;
+                          return (
+                            <li
+                              key={lot.id}
+                              className="flex items-center justify-between gap-3"
+                            >
+                              <span className="truncate">
+                                {new Date(lot.acquired_at).toLocaleDateString()}{" "}
+                                · {lot.acquisition_source.replace(/_/g, " ")}
+                                {lot.consignor_name &&
+                                  ` · ${lot.consignor_name}${lot.consignor_split_pct != null ? ` ${lot.consignor_split_pct}%` : ""}`}
+                              </span>
+                              <span className="font-mono tabular-nums shrink-0">
+                                ×{lot.quantity_remaining}
+                                {isConsigned && consignedPerUnit != null
+                                  ? ` · payout ${formatPrice(consignedPerUnit, currency, {}, currency)}/u`
+                                  : lot.acquisition_cost_cents != null
+                                    ? ` @ ${formatPrice(lot.acquisition_cost_cents, lot.acquisition_currency, {}, lot.acquisition_currency)}`
+                                    : " · cost unknown"}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   </li>
