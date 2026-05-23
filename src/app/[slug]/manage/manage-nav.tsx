@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAccounts } from "@/contexts/AccountContext";
+
+const COLLAPSED_KEY = "manageNav.collapsed";
 
 interface NavItem {
   href?: string;
@@ -18,12 +21,14 @@ function NavLink({
   label,
   exact,
   slug,
+  collapsed,
 }: {
   href: string;
   icon: string;
   label: string;
   exact?: boolean;
   slug: string;
+  collapsed: boolean;
 }) {
   const pathname = usePathname();
   const resolved = `/${slug}${href}`;
@@ -35,25 +40,45 @@ function NavLink({
     <li>
       <Link
         href={resolved}
-        className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-colors ${
+        title={collapsed ? label : undefined}
+        className={`flex items-center rounded-md text-sm transition-colors ${
+          collapsed
+            ? "md:justify-center md:gap-0 md:px-2 md:py-2 gap-2.5 px-3 py-1.5"
+            : "gap-2.5 px-3 py-1.5"
+        } ${
           isActive
             ? "bg-red-50 text-red-700 font-medium dark:bg-red-900/20 dark:text-red-400"
             : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
         }`}
       >
         <span className="text-base leading-none">{icon}</span>
-        <span>{label}</span>
+        <span className={collapsed ? "md:hidden" : ""}>{label}</span>
       </Link>
     </li>
   );
 }
 
-function NavSection({ item, slug }: { item: NavItem; slug: string }) {
+function NavSection({
+  item,
+  slug,
+  collapsed,
+}: {
+  item: NavItem;
+  slug: string;
+  collapsed: boolean;
+}) {
   return (
     <li>
-      <div className="px-3 pt-4 pb-1 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">
+      <div
+        className={`px-3 pt-4 pb-1 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500 ${
+          collapsed ? "md:hidden" : ""
+        }`}
+      >
         {item.label}
       </div>
+      {collapsed && (
+        <div className="hidden md:block border-t border-gray-100 dark:border-gray-700 mt-3 mx-2" />
+      )}
       {item.children && (
         <ul className="space-y-0.5">
           {item.children.map((child) => (
@@ -64,6 +89,7 @@ function NavSection({ item, slug }: { item: NavItem; slug: string }) {
               label={child.label}
               exact={child.exact}
               slug={slug}
+              collapsed={collapsed}
             />
           ))}
         </ul>
@@ -149,6 +175,23 @@ export default function ManageNav({
 
   const navItems = buildNavItems(isTrader);
 
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(COLLAPSED_KEY) === "1") setCollapsed(true);
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // localStorage can throw in private modes; safe to ignore.
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="container mx-auto px-4 py-12">
@@ -166,12 +209,30 @@ export default function ManageNav({
         </div>
 
         <div className="flex flex-col md:flex-row gap-8">
-          <aside className="md:w-56 shrink-0">
+          <aside
+            className={`shrink-0 ${
+              collapsed ? "md:w-14" : "md:w-56"
+            } transition-[width] duration-150`}
+          >
             <nav className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3 md:sticky md:top-4">
+              <button
+                type="button"
+                onClick={toggleCollapsed}
+                title={collapsed ? "Expand nav" : "Collapse nav"}
+                aria-label={collapsed ? "Expand nav" : "Collapse nav"}
+                className="hidden md:flex items-center justify-center w-full mb-2 px-2 py-1.5 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+              >
+                {collapsed ? "»" : "«"}
+              </button>
               <ul className="space-y-0.5">
                 {navItems.map((item) =>
                   item.children && item.children.length > 0 ? (
-                    <NavSection key={item.label} item={item} slug={slug} />
+                    <NavSection
+                      key={item.label}
+                      item={item}
+                      slug={slug}
+                      collapsed={collapsed}
+                    />
                   ) : (
                     <NavLink
                       key={item.href}
@@ -180,6 +241,7 @@ export default function ManageNav({
                       label={item.label}
                       exact={item.exact}
                       slug={slug}
+                      collapsed={collapsed}
                     />
                   )
                 )}
