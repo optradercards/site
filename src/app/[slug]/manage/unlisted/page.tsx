@@ -189,6 +189,12 @@ export default function UnlistedPage() {
     const v = searchParams.get("consign");
     return v === "owned" || v === "consigned" ? v : "all";
   });
+  const [nameFilter, setNameFilter] = useState<string>(
+    () => searchParams.get("name") ?? "",
+  );
+  const [numberFilter, setNumberFilter] = useState<string>(
+    () => searchParams.get("num") ?? "",
+  );
 
   // Push filter state into the URL on change. router.replace doesn't push a
   // history entry, so back button still goes to the previous page.
@@ -203,6 +209,8 @@ export default function UnlistedPage() {
     if (hasCostFilter !== "any") next.set("has_cost", hasCostFilter);
     if (ruleFilter !== "any") next.set("rule", ruleFilter);
     if (consignmentFilter !== "all") next.set("consign", consignmentFilter);
+    if (nameFilter.trim()) next.set("name", nameFilter.trim());
+    if (numberFilter.trim()) next.set("num", numberFilter.trim());
     const qs = next.toString();
     const url = qs ? `${pathname}?${qs}` : pathname;
     if (url !== `${pathname}${window.location.search}`) {
@@ -218,6 +226,8 @@ export default function UnlistedPage() {
     hasCostFilter,
     ruleFilter,
     consignmentFilter,
+    nameFilter,
+    numberFilter,
     pathname,
     router,
   ]);
@@ -464,6 +474,23 @@ export default function UnlistedPage() {
       );
     }
 
+    // Card name — case-insensitive substring match
+    const nameQuery = nameFilter.trim().toLowerCase();
+    if (nameQuery) {
+      result = result.filter((r) =>
+        (r.item.product_name ?? "").toLowerCase().includes(nameQuery),
+      );
+    }
+
+    // Card number — case-insensitive substring match (numbers are short
+    // strings like "025" or "SV-P 173", so substring beats exact match)
+    const numberQuery = numberFilter.trim().toLowerCase();
+    if (numberQuery) {
+      result = result.filter((r) =>
+        (r.item.card_number ?? "").toLowerCase().includes(numberQuery),
+      );
+    }
+
     // Cost range (inputs are dollar strings in sellerCurrency)
     const parseDollarsToCents = (s: string): number | null => {
       const trimmed = s.trim();
@@ -591,6 +618,8 @@ export default function UnlistedPage() {
     hasCostFilter,
     ruleFilter,
     consignmentFilter,
+    nameFilter,
+    numberFilter,
     sort,
     rules,
     sellerCurrency,
@@ -813,7 +842,9 @@ export default function UnlistedPage() {
           (marketMax.trim() ? 1 : 0) +
           (hasCostFilter !== "any" ? 1 : 0) +
           (ruleFilter !== "any" ? 1 : 0) +
-          (consignmentFilter !== "all" ? 1 : 0);
+          (consignmentFilter !== "all" ? 1 : 0) +
+          (nameFilter.trim() ? 1 : 0) +
+          (numberFilter.trim() ? 1 : 0);
         const clearAll = () => {
           setGradeFilter("all");
           setCostMin("");
@@ -823,6 +854,8 @@ export default function UnlistedPage() {
           setHasCostFilter("any");
           setRuleFilter("any");
           setConsignmentFilter("all");
+          setNameFilter("");
+          setNumberFilter("");
         };
         const inputCls =
           "mt-1 block w-full rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500";
@@ -869,6 +902,28 @@ export default function UnlistedPage() {
             </button>
             {filtersOpen && (
               <div className="px-4 pb-4 pt-2 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <label className="block">
+                  <span className={labelCls}>Card name</span>
+                  <input
+                    type="text"
+                    value={nameFilter}
+                    onChange={(e) => setNameFilter(e.target.value)}
+                    placeholder="e.g. Charizard"
+                    className={inputCls}
+                  />
+                </label>
+
+                <label className="block">
+                  <span className={labelCls}>Card number</span>
+                  <input
+                    type="text"
+                    value={numberFilter}
+                    onChange={(e) => setNumberFilter(e.target.value)}
+                    placeholder="e.g. 025 or SV-P"
+                    className={inputCls}
+                  />
+                </label>
+
                 <label className="block">
                   <span className={labelCls}>Grade</span>
                   <select
