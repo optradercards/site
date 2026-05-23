@@ -24,6 +24,9 @@ export default function ListingsPage() {
   const searchParams = useSearchParams();
 
   const [listings, setListings] = useState<EcomListing[]>([]);
+  const [groupsByListingKey, setGroupsByListingKey] = useState<Map<string, string[]>>(
+    new Map(),
+  );
   const [loading, setLoading] = useState(true);
 
   // Sorting
@@ -156,14 +159,68 @@ export default function ListingsPage() {
     if (!activeAccountId) return;
     setLoading(true);
 
-    const { data } = await supabase
-      .schema("ecom")
-      .from("listing_details")
-      .select("*")
-      .eq("account_id", activeAccountId)
-      .neq("status", "archived");
+    const [listingsRes, lotsRes, groupsRes, linksRes] = await Promise.all([
+      supabase
+        .schema("ecom")
+        .from("listing_details")
+        .select("*")
+        .eq("account_id", activeAccountId)
+        .neq("status", "archived"),
+      // Lots scoped to account; we only need the keying fields to map
+      // group_items → listing variant key.
+      supabase
+        .schema("ecom")
+        .from("inventory_lots")
+        .select("id, card_product_id, custom_product_id, grading_service, grade")
+        .eq("account_id", activeAccountId),
+      supabase
+        .schema("ecom")
+        .from("inventory_groups")
+        .select("id, name")
+        .eq("account_id", activeAccountId),
+      supabase
+        .schema("ecom")
+        .from("inventory_group_items")
+        .select("group_id, lot_id"),
+    ]);
 
-    setListings((data ?? []) as EcomListing[]);
+    setListings((listingsRes.data ?? []) as EcomListing[]);
+
+    // Build listing key → unique group names from the lots backing each variant.
+    const keyByLotId = new Map<string, string>();
+    for (const lot of (lotsRes.data ?? []) as {
+      id: string;
+      card_product_id: string | null;
+      custom_product_id: string | null;
+      grading_service: string | null;
+      grade: string | null;
+    }[]) {
+      const key = `${lot.card_product_id ?? ""}|${lot.custom_product_id ?? ""}|${lot.grading_service ?? ""}|${lot.grade ?? ""}`;
+      keyByLotId.set(lot.id, key);
+    }
+    const groupNameById = new Map<string, string>();
+    for (const g of (groupsRes.data ?? []) as { id: string; name: string }[]) {
+      groupNameById.set(g.id, g.name);
+    }
+    const namesByKey = new Map<string, Set<string>>();
+    for (const link of (linksRes.data ?? []) as {
+      group_id: string;
+      lot_id: string;
+    }[]) {
+      const key = keyByLotId.get(link.lot_id);
+      if (!key) continue; // lot belongs to another account
+      const name = groupNameById.get(link.group_id);
+      if (!name) continue;
+      const set = namesByKey.get(key) ?? new Set<string>();
+      set.add(name);
+      namesByKey.set(key, set);
+    }
+    const finalMap = new Map<string, string[]>();
+    for (const [key, set] of namesByKey) {
+      finalMap.set(key, Array.from(set).sort());
+    }
+    setGroupsByListingKey(finalMap);
+
     setLoading(false);
   }, [supabase, activeAccountId]);
 
@@ -950,6 +1007,9 @@ export default function ListingsPage() {
                 <SortHeader label="Diff" sortKey="diff" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Profit" sortKey="profit" align="right" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
                 <SortHeader label="Status" sortKey="status" align="left" activeSortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  Groups
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1152,6 +1212,28 @@ export default function ListingsPage() {
                       >
                         {r.listing.status === "active" ? "Active" : "Draft"}
                       </span>
+                    </td>
+                    {/* Groups — union of groups across lots backing this variant */}
+                    <td className="px-4 py-3 text-xs">
+                      {(() => {
+                        const key = `${r.listing.card_product_id ?? ""}|${r.listing.custom_product_id ?? ""}|${r.listing.grading_service ?? ""}|${r.listing.grade ?? ""}`;
+                        const names = groupsByListingKey.get(key) ?? [];
+                        if (names.length === 0) {
+                          return <span className="text-gray-400">{"—"}</span>;
+                        }
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {names.map((g) => (
+                              <span
+                                key={g}
+                                className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                              >
+                                {g}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

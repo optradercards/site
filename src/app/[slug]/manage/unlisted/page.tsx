@@ -38,6 +38,7 @@ type CollectionItem = {
   purchase_price_cents: number | null;
   purchase_price_currency: string | null;
   consignor_asking_price_cents: number | null;
+  groups: string[];
   consignor_acceptance:
     | "not_applicable"
     | "pending"
@@ -300,11 +301,12 @@ export default function UnlistedPage() {
       purchase_price_cents: r.acquisition_cost_cents,
       purchase_price_currency: r.acquisition_currency,
       consignor_asking_price_cents: r.consignor_asking_price_cents ?? null,
+      groups: [],
       consignor_acceptance: r.consignor_acceptance ?? null,
     }));
-    setItems(collection);
 
     if (collection.length === 0) {
+      setItems(collection);
       setMarketMap({});
       setListedKeys(new Set());
       setLoading(false);
@@ -312,8 +314,9 @@ export default function UnlistedPage() {
     }
 
     const productIds = [...new Set(collection.map((c) => c.product_id))];
+    const lotIds = collection.map((c) => c.instance_id);
 
-    const [marketRes, listingsRes] = await Promise.all([
+    const [marketRes, listingsRes, groupsRes, linksRes] = await Promise.all([
       supabase
         .schema("cards")
         .from("market_data")
@@ -325,7 +328,39 @@ export default function UnlistedPage() {
         .select("id, card_product_id, grading_service, grade")
         .eq("account_id", activeAccountId)
         .neq("status", "archived"),
+      supabase
+        .schema("ecom")
+        .from("inventory_groups")
+        .select("id, name")
+        .eq("account_id", activeAccountId),
+      supabase
+        .schema("ecom")
+        .from("inventory_group_items")
+        .select("group_id, lot_id")
+        .in("lot_id", lotIds),
     ]);
+
+    const groupNameById = new Map<string, string>();
+    for (const g of (groupsRes.data ?? []) as { id: string; name: string }[]) {
+      groupNameById.set(g.id, g.name);
+    }
+    const groupsByLot = new Map<string, string[]>();
+    for (const link of (linksRes.data ?? []) as {
+      group_id: string;
+      lot_id: string;
+    }[]) {
+      const name = groupNameById.get(link.group_id);
+      if (!name) continue;
+      const list = groupsByLot.get(link.lot_id) ?? [];
+      list.push(name);
+      groupsByLot.set(link.lot_id, list);
+    }
+    setItems(
+      collection.map((c) => ({
+        ...c,
+        groups: groupsByLot.get(c.instance_id) ?? [],
+      })),
+    );
 
     const mMap: Record<string, MarketData> = {};
     for (const m of (marketRes.data ?? []) as MarketData[]) {
@@ -1277,6 +1312,9 @@ export default function UnlistedPage() {
                   dir={sort.dir}
                   onClick={() => toggleSort("profit")}
                 />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  Groups
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -1439,6 +1477,23 @@ export default function UnlistedPage() {
                       }`}
                     >
                       {fmt(r.profit)}
+                    </td>
+                    {/* Groups */}
+                    <td className="px-4 py-3 text-xs">
+                      <div className="flex flex-wrap gap-1">
+                        {r.item.groups.length === 0 ? (
+                          <span className="text-gray-400">{"—"}</span>
+                        ) : (
+                          r.item.groups.map((g) => (
+                            <span
+                              key={g}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
+                            >
+                              {g}
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
