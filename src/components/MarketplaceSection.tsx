@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { sampleCards } from '@/data/sampleCards';
 import { Card } from '@/types/card';
+import { matchesQuery } from '@/lib/search';
 
 interface MarketplaceSectionProps {
   onCardSelect: (card: Card) => void;
@@ -23,13 +24,11 @@ export default function MarketplaceSection({
 
   const filteredCards = useMemo(() => {
     return sampleCards.filter((card) => {
-      const matchesSearch =
-        card.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        card.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const searchOk = matchesQuery(searchTerm, card.name, card.description);
       const matchesRarity = !rarityFilter || card.rarity === rarityFilter;
       const matchesType = !typeFilter || card.type === typeFilter;
 
-      return matchesSearch && matchesRarity && matchesType;
+      return searchOk && matchesRarity && matchesType;
     });
   }, [searchTerm, rarityFilter, typeFilter]);
 

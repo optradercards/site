@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { matchesQuery } from "@/lib/search";
 
 interface UserRow {
   user_id: string;
@@ -33,15 +34,9 @@ export default function AdminUsersPage() {
     load();
   }, [load]);
 
-  const filtered = users.filter((u) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return (
-      u.email.toLowerCase().includes(q) ||
-      (u.full_name ?? "").toLowerCase().includes(q) ||
-      (u.slug ?? "").toLowerCase().includes(q)
-    );
-  });
+  const filtered = users.filter((u) =>
+    matchesQuery(search, u.email, u.full_name, u.slug),
+  );
 
   return (
     <div className="space-y-6">

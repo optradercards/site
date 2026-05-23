@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { LinkStatusBadge } from "../inventory/receive/contact-picker";
+import { matchesQuery } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // /manage/contacts — vendor-side CRM for tracking people they do business
@@ -105,14 +106,8 @@ export default function ContactsPage() {
   }, [loadContacts]);
 
   const filtered = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter(
-      (r) =>
-        r.name.toLowerCase().includes(s) ||
-        (r.email?.toLowerCase().includes(s) ?? false) ||
-        (r.phone?.toLowerCase().includes(s) ?? false),
-    );
+    if (!search.trim()) return rows;
+    return rows.filter((r) => matchesQuery(search, r.name, r.email, r.phone));
   }, [rows, search]);
 
   // ----- Create new contact -------------------------------------------------

@@ -9,6 +9,7 @@ import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import { gradeLabel, type EcomListing } from "@/lib/pricing";
 import CardCell from "@/components/CardCell";
 import ZoomableImage from "@/components/ZoomableImage";
+import { matchesQuery } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // Store Page — shows ecom.listings (active listings)
@@ -318,16 +319,14 @@ export default function ListingsPage() {
     if (statusFilter !== "all") {
       filtered = filtered.filter((r) => r.listing.status === statusFilter);
     }
-    const cardNoQuery = cardNumberFilter.trim().toLowerCase();
-    if (cardNoQuery) {
+    if (cardNumberFilter.trim()) {
       filtered = filtered.filter((r) =>
-        (r.listing.card_number ?? "").toLowerCase().includes(cardNoQuery),
+        matchesQuery(cardNumberFilter, r.listing.card_number),
       );
     }
-    const nameQuery = nameFilter.trim().toLowerCase();
-    if (nameQuery) {
+    if (nameFilter.trim()) {
       filtered = filtered.filter((r) =>
-        (r.listing.card_name ?? "").toLowerCase().includes(nameQuery),
+        matchesQuery(nameFilter, r.listing.card_name),
       );
     }
     if (consignmentFilter === "consigned") {
