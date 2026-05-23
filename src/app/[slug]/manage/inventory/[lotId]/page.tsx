@@ -209,7 +209,7 @@ export default function InventoryLotPage() {
     setSelectedGroups(linkSet);
     setInitialGroups(new Set(linkSet));
 
-    setSales((salesRes.data ?? []) as SaleAllocationRow[]);
+    setSales((salesRes.data ?? []) as unknown as SaleAllocationRow[]);
 
     setLoading(false);
   }, [supabase, activeAccountId, lotId]);
