@@ -520,27 +520,28 @@ export default function SellPage() {
             />
           </label>
         </div>
-        <div className="mt-5 pt-5 border-t border-gray-100 dark:border-gray-700 flex items-end gap-4">
-          <label className="block flex-1 max-w-xs">
+        <div className="mt-5 pt-5 border-t border-gray-100 dark:border-gray-700 flex flex-col lg:flex-row lg:items-end gap-3 lg:gap-6">
+          <label className="block w-full sm:w-64 shrink-0">
             <span className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
               Trade % of market value
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-stretch">
               <input
                 type="number"
+                inputMode="decimal"
                 value={tradePctInput}
                 onChange={(e) => setTradePctInput(e.target.value)}
                 min="0"
                 max="200"
                 step="0.5"
-                className="block w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                className="block w-full h-12 px-4 text-base font-semibold tabular-nums rounded-l-lg border border-r-0 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-red-500 focus:border-red-500"
               />
-              <span className="text-lg font-semibold text-gray-500 dark:text-gray-400">
+              <span className="inline-flex items-center justify-center w-12 h-12 text-base font-semibold text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-r-lg">
                 %
               </span>
             </div>
           </label>
-          <p className="text-xs text-gray-500 dark:text-gray-400 pb-3">
+          <p className="text-xs text-gray-500 dark:text-gray-400 lg:pb-3 max-w-lg">
             We credit the customer this much of each trade-in's market value.
             E.g. <strong>75%</strong> means a $100 trade card is worth $75
             toward what they're buying, and lands in inventory at $75 cost.
