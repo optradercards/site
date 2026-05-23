@@ -95,7 +95,7 @@ export default function InventoryPreviewModal({
           .in("product_id", productIds),
       ]);
       if (cancelled) return;
-      setLots((lotsRes.data ?? []) as InventoryLot[]);
+      setLots((lotsRes.data ?? []) as unknown as InventoryLot[]);
       const market = new Map<string, MarketData>();
       for (const m of (marketRes.data ?? []) as MarketData[]) {
         market.set(m.product_id, m);
