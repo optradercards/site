@@ -36,6 +36,7 @@ type CollectionItem = {
   grade: string | null;
   purchase_price_cents: number | null;
   purchase_price_currency: string | null;
+  consignor_asking_price_cents: number | null;
   consignor_acceptance:
     | "not_applicable"
     | "pending"
@@ -266,7 +267,7 @@ export default function UnlistedPage() {
       .schema("ecom")
       .from("vendor_inventory_summary")
       .select(
-        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance"
+        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance, consignor_asking_price_cents"
       )
       .eq("account_id", activeAccountId)
       .gt("quantity_remaining", 0)
@@ -287,6 +288,7 @@ export default function UnlistedPage() {
       grade: r.grade,
       purchase_price_cents: r.acquisition_cost_cents,
       purchase_price_currency: r.acquisition_currency,
+      consignor_asking_price_cents: r.consignor_asking_price_cents ?? null,
       consignor_acceptance: r.consignor_acceptance ?? null,
     }));
     setItems(collection);
@@ -405,7 +407,8 @@ export default function UnlistedPage() {
           )
         : null;
 
-      // Price — staged override if set, otherwise the calculated price.
+      // Price — staged override if set, then the consignor's asking price
+      // (agreed at intake), then the rule-calculated price as a last resort.
       let priceCents: number | null;
       if (staged) {
         if (staged.pricingMode === "fixed") {
@@ -420,6 +423,8 @@ export default function UnlistedPage() {
             staged.marketRoundTo ?? 100,
           );
         }
+      } else if (item.consignor_asking_price_cents != null) {
+        priceCents = item.consignor_asking_price_cents;
       } else {
         priceCents = calculatedPriceCents;
       }

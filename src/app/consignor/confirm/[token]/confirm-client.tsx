@@ -16,12 +16,15 @@ type IntakeLot = {
   consignor_dispute_notes: string | null;
   consignor_split_pct: number | null;
   consignor_chargeback_per_unit_cents: number | null;
+  consignor_asking_price_cents: number | null;
   market_usd_cents: number | null;
   total_usd_cents: number | null;
   share_usd_cents: number | null;
   market_display: string | null;
   total_display: string | null;
   share_display: string | null;
+  asking_price_display: string | null;
+  asking_total_display: string | null;
 };
 
 type Props = {
@@ -29,6 +32,7 @@ type Props = {
   lots: IntakeLot[];
   grandTotalDisplay: string | null;
   grandShareDisplay: string | null;
+  grandAskingDisplay: string | null;
 };
 
 function gradeLabel(service: string | null, grade: string | null): string {
@@ -50,6 +54,7 @@ export default function ConfirmIntakeClient({
   lots,
   grandTotalDisplay,
   grandShareDisplay,
+  grandAskingDisplay,
 }: Props) {
   const supabase = useMemo(() => createClient(), []);
 
@@ -189,8 +194,9 @@ export default function ConfirmIntakeClient({
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden mb-6">
         <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Market price is a catalog reference and is not the sale price — the
-            final price is set when the item is listed.
+            Asking price is the price you agreed with the vendor — what each
+            item will be advertised at. Market price is a catalog reference
+            for comparison only.
           </p>
         </div>
         <table className="w-full text-sm">
@@ -200,6 +206,7 @@ export default function ConfirmIntakeClient({
               <SortTh col="card" align="left" sort={sort} onToggle={toggleSort}>Card</SortTh>
               <SortTh col="grade" align="left" sort={sort} onToggle={toggleSort}>Grade</SortTh>
               <SortTh col="qty" align="right" sort={sort} onToggle={toggleSort}>Qty</SortTh>
+              <th className="px-3 py-2 text-right">Asking</th>
               <SortTh col="market" align="right" sort={sort} onToggle={toggleSort}>Market</SortTh>
               <SortTh col="total" align="right" sort={sort} onToggle={toggleSort}>Total</SortTh>
               <SortTh col="split" align="right" sort={sort} onToggle={toggleSort}>Split</SortTh>
@@ -245,6 +252,22 @@ export default function ConfirmIntakeClient({
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums">
                     {lot.quantity_acquired}
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums whitespace-nowrap">
+                    {lot.asking_price_display ? (
+                      <div className="leading-tight">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">
+                          {lot.asking_price_display}
+                        </div>
+                        {lot.quantity_acquired > 1 && lot.asking_total_display && (
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                            × {lot.quantity_acquired} = {lot.asking_total_display}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-3 py-3 text-right tabular-nums text-gray-700 dark:text-gray-300 whitespace-nowrap">
                     {lot.market_display ?? "—"}
@@ -300,11 +323,15 @@ export default function ConfirmIntakeClient({
           <tfoot className="bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-700">
             <tr>
               <td
-                colSpan={5}
+                colSpan={4}
                 className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300"
               >
                 Grand total
               </td>
+              <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                {grandAskingDisplay ?? "—"}
+              </td>
+              <td></td>
               <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-900 dark:text-gray-100 whitespace-nowrap">
                 {grandTotalDisplay ?? "—"}
               </td>

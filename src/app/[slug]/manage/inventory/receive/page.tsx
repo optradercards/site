@@ -66,6 +66,7 @@ type LineItem = {
   grade: string;
   quantity: number;
   unitCostInput: string; // only used by purchase mode
+  askingPriceInput: string; // only used by consignment mode — what the consignor wants it listed at
   source: AcquisitionSource; // only used by purchase mode
 };
 
@@ -147,6 +148,7 @@ function newLine(picked: PickedCard, source: AcquisitionSource = "purchase"): Li
       grade: "",
       quantity: 1,
       unitCostInput: "0",
+      askingPriceInput: "",
       source,
     };
   }
@@ -181,6 +183,7 @@ function newLine(picked: PickedCard, source: AcquisitionSource = "purchase"): Li
     grade: "",
     quantity: 1,
     unitCostInput: "0",
+    askingPriceInput: "",
     source,
   };
 }
@@ -842,6 +845,7 @@ type ConsignmentDraftForm = {
     gradingService: GradingService;
     grade: string;
     quantity: number;
+    askingPriceInput?: string;
   }[];
 };
 
@@ -1000,6 +1004,7 @@ function ConsignmentMode({ slug }: { slug: string }) {
             grade: saved.grade,
             quantity: saved.quantity,
             unitCostInput: "0",
+            askingPriceInput: saved.askingPriceInput ?? "",
             source: "consignment",
           };
         }
@@ -1037,6 +1042,7 @@ function ConsignmentMode({ slug }: { slug: string }) {
           grade: saved.grade,
           quantity: saved.quantity,
           unitCostInput: "0",
+          askingPriceInput: saved.askingPriceInput ?? "",
           source: "consignment",
         };
       });
@@ -1083,6 +1089,7 @@ function ConsignmentMode({ slug }: { slug: string }) {
       gradingService: l.gradingService,
       grade: l.grade,
       quantity: l.quantity,
+      askingPriceInput: l.askingPriceInput,
     })),
   });
 
@@ -1227,33 +1234,39 @@ function ConsignmentMode({ slug }: { slug: string }) {
         intakeId = (intakeRow as { id: string }).id;
       }
 
-      const lotRows = lines.map((l) => ({
-        account_id: activeAccountId,
-        card_product_id: l.cardKind === "card" ? l.cardProductId : null,
-        custom_product_id:
-          l.cardKind === "custom" ? customIdByKey.get(l.key) ?? null : null,
-        grading_service: l.gradingService,
-        grade: l.grade.trim() || null,
-        quantity_acquired: l.quantity,
-        quantity_remaining: l.quantity,
-        acquisition_cost_cents: 0,
-        acquisition_currency: "AUD",
-        acquisition_source: "consignment",
-        acquired_at: acquiredAtIso,
-        // New: link the consignor to a CRM contact row.
-        consignor_contact_id: contact.id,
-        // If the contact is linked to a platform account, mirror that here.
-        consignor_account_id: contact.linked_account_id,
-        // Legacy mirror fields — keep populated for backward compatibility
-        // with views/exports that still read them.
-        consignor_name: contact.name,
-        consignor_contact: contact.email,
-        consignor_split_pct: splitPctNum,
-        consignor_chargeback_per_unit_cents: chargebackCents,
-        notes: notes.trim() || null,
-        consignment_intake_id: intakeId,
-        consignor_acceptance: wantsEmail ? "pending" : "accepted",
-      }));
+      const lotRows = lines.map((l) => {
+        const askingCents = l.askingPriceInput.trim()
+          ? parseCents(l.askingPriceInput)
+          : null;
+        return {
+          account_id: activeAccountId,
+          card_product_id: l.cardKind === "card" ? l.cardProductId : null,
+          custom_product_id:
+            l.cardKind === "custom" ? customIdByKey.get(l.key) ?? null : null,
+          grading_service: l.gradingService,
+          grade: l.grade.trim() || null,
+          quantity_acquired: l.quantity,
+          quantity_remaining: l.quantity,
+          acquisition_cost_cents: 0,
+          acquisition_currency: "AUD",
+          acquisition_source: "consignment",
+          acquired_at: acquiredAtIso,
+          // New: link the consignor to a CRM contact row.
+          consignor_contact_id: contact.id,
+          // If the contact is linked to a platform account, mirror that here.
+          consignor_account_id: contact.linked_account_id,
+          // Legacy mirror fields — keep populated for backward compatibility
+          // with views/exports that still read them.
+          consignor_name: contact.name,
+          consignor_contact: contact.email,
+          consignor_split_pct: splitPctNum,
+          consignor_chargeback_per_unit_cents: chargebackCents,
+          consignor_asking_price_cents: askingCents,
+          notes: notes.trim() || null,
+          consignment_intake_id: intakeId,
+          consignor_acceptance: wantsEmail ? "pending" : "accepted",
+        };
+      });
 
       const { error: lErr } = await supabase
         .schema("ecom")
@@ -1476,6 +1489,7 @@ function ConsignmentMode({ slug }: { slug: string }) {
                   <th className="px-2 py-2 text-left">Grade</th>
                   <th className="px-2 py-2 text-right">Qty</th>
                   <th className="px-2 py-2 text-right">Market</th>
+                  <th className="px-2 py-2 text-right">Asking price</th>
                   <th className="px-2 py-2"></th>
                 </tr>
               </thead>
@@ -1557,6 +1571,31 @@ function ConsignmentMode({ slug }: { slug: string }) {
                         </div>
                       ) : (
                         "—"
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={l.askingPriceInput}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          if (next !== "" && !/^\d*\.?\d{0,2}$/.test(next)) return;
+                          updateLine(l.key, { askingPriceInput: next });
+                        }}
+                        placeholder="0.00"
+                        className="w-24 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 px-2 py-1 text-sm text-right text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
+                      />
+                      {l.askingPriceInput.trim() && l.quantity > 1 && (
+                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          × {l.quantity} ={" "}
+                          {formatPrice(
+                            parseCents(l.askingPriceInput) * l.quantity,
+                            sellerCurrency,
+                            rates ?? {},
+                            sellerCurrency,
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="px-2 py-2 text-right">

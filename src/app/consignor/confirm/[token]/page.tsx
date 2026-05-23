@@ -25,6 +25,7 @@ type IntakeLot = {
   consignor_dispute_notes: string | null;
   consignor_split_pct: number | null;
   consignor_chargeback_per_unit_cents: number | null;
+  consignor_asking_price_cents: number | null;
   price_ungraded: number | null;
   price_psa_1: number | null;
   price_psa_2: number | null;
@@ -64,6 +65,8 @@ export type IntakeLotForClient = Omit<
   market_display: string | null;
   total_display: string | null;
   share_display: string | null;
+  asking_price_display: string | null;
+  asking_total_display: string | null;
 };
 
 type IntakePayload = {
@@ -109,6 +112,7 @@ export default async function ConsignorConfirmPage({
   const displayCurrency = "AUD";
   let grandTotalUsd: number | null = null;
   let grandShareUsd: number | null = null;
+  let grandAskingCents: number | null = null;
   const lotsForClient: IntakeLotForClient[] = lots.map((l) => {
     const market: MarketData = {
       product_id: "",
@@ -139,6 +143,12 @@ export default async function ConsignorConfirmPage({
     if (shareUsd != null) {
       grandShareUsd = (grandShareUsd ?? 0) + shareUsd;
     }
+    const asking = l.consignor_asking_price_cents;
+    const askingTotal =
+      asking != null ? asking * l.quantity_acquired : null;
+    if (askingTotal != null) {
+      grandAskingCents = (grandAskingCents ?? 0) + askingTotal;
+    }
     return {
       id: l.id,
       card_name: l.card_name,
@@ -152,6 +162,7 @@ export default async function ConsignorConfirmPage({
       consignor_dispute_notes: l.consignor_dispute_notes,
       consignor_split_pct: l.consignor_split_pct,
       consignor_chargeback_per_unit_cents: l.consignor_chargeback_per_unit_cents,
+      consignor_asking_price_cents: asking,
       market_usd_cents: usd,
       total_usd_cents: totalUsd,
       share_usd_cents: shareUsd,
@@ -165,6 +176,14 @@ export default async function ConsignorConfirmPage({
         shareUsd != null
           ? formatPrice(shareUsd, displayCurrency, rates, "USD")
           : null,
+      asking_price_display:
+        asking != null
+          ? formatPrice(asking, displayCurrency, rates, displayCurrency)
+          : null,
+      asking_total_display:
+        askingTotal != null
+          ? formatPrice(askingTotal, displayCurrency, rates, displayCurrency)
+          : null,
     };
   });
   const grandTotalDisplay =
@@ -174,6 +193,10 @@ export default async function ConsignorConfirmPage({
   const grandShareDisplay =
     grandShareUsd != null
       ? formatPrice(grandShareUsd, displayCurrency, rates, "USD")
+      : null;
+  const grandAskingDisplay =
+    grandAskingCents != null
+      ? formatPrice(grandAskingCents, displayCurrency, rates, displayCurrency)
       : null;
 
   return (
@@ -253,6 +276,7 @@ export default async function ConsignorConfirmPage({
             lots={lotsForClient}
             grandTotalDisplay={grandTotalDisplay}
             grandShareDisplay={grandShareDisplay}
+            grandAskingDisplay={grandAskingDisplay}
           />
         )}
       </div>
