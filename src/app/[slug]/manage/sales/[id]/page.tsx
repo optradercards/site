@@ -624,6 +624,9 @@ export default function SaleDetailPage() {
           txCurrency={tx.currency}
           discountCents={tx.discount_cents}
           outgoingSubtotalCents={tx.outgoing_subtotal_cents}
+          tradeValuePct={
+            tx.trade_value_pct != null ? Number(tx.trade_value_pct) : null
+          }
           editPrices={editDraft?.item_prices ?? null}
           onPriceChange={(id, v) =>
             setEditDraft((d) =>
@@ -644,6 +647,9 @@ export default function SaleDetailPage() {
           txCurrency={tx.currency}
           discountCents={tx.discount_cents}
           outgoingSubtotalCents={tx.outgoing_subtotal_cents}
+          tradeValuePct={
+            tx.trade_value_pct != null ? Number(tx.trade_value_pct) : null
+          }
           editPrices={editDraft?.item_prices ?? null}
           onPriceChange={(id, v) =>
             setEditDraft((d) =>
@@ -754,6 +760,7 @@ function ItemSection({
   txCurrency,
   discountCents,
   outgoingSubtotalCents,
+  tradeValuePct,
   editPrices,
   onPriceChange,
 }: {
@@ -765,6 +772,7 @@ function ItemSection({
   txCurrency: string;
   discountCents: number;
   outgoingSubtotalCents: number;
+  tradeValuePct: number | null;
   editPrices: Record<string, string> | null;
   onPriceChange: (id: string, value: string) => void;
 }) {
@@ -772,10 +780,15 @@ function ItemSection({
     tone === "out"
       ? "border-l-4 border-red-300 dark:border-red-700"
       : "border-l-4 border-green-300 dark:border-green-700";
-  const subtotal = items.reduce(
-    (s, it) => s + it.unit_price_cents * it.quantity,
-    0,
-  );
+  // Per-line value: outbound = market; inbound = -(market × trade%/100) so
+  // it reflects the credit given (cash impact), matching the sales list.
+  const isInboundSide = (s: string) => s === "bought" || s === "traded_in";
+  const pct = tradeValuePct ?? 100;
+  const lineValueCents = (it: Item): number =>
+    isInboundSide(it.side)
+      ? -Math.round((it.unit_price_cents * it.quantity * pct) / 100)
+      : it.unit_price_cents * it.quantity;
+  const subtotal = items.reduce((s, it) => s + lineValueCents(it), 0);
   const sectionDiscountAllocated = items.reduce(
     (s, it) =>
       s +
@@ -813,7 +826,10 @@ function ItemSection({
       <ul className="divide-y divide-gray-100 dark:divide-gray-700">
         {items.map((it) => {
           const card = it.card_product_id ? cards.get(it.card_product_id) : null;
-          const lineTotal = it.unit_price_cents * it.quantity;
+          const isInbound = isInboundSide(it.side);
+          const rawLineTotal = it.unit_price_cents * it.quantity;
+          // For inbound, "line total" = -(market × trade%/100) = credit out.
+          // For outbound, raw line total minus the line's discount share.
           const lineDiscountShare = lineDiscountShareCents(
             it.unit_price_cents,
             it.quantity,
@@ -821,12 +837,16 @@ function ItemSection({
             discountCents,
             outgoingSubtotalCents,
           );
-          const effectiveLineTotal = lineTotal - lineDiscountShare;
-          let costCents: number | null = null;
-          for (const a of it.sale_allocations ?? []) {
-            const c = allocCostCents(a, it.unit_price_cents);
-            if (c != null) {
-              costCents = (costCents ?? 0) + c;
+          const effectiveLineTotal = isInbound
+            ? lineValueCents(it)
+            : rawLineTotal - lineDiscountShare;
+          let costCents: number | null = isInbound ? 0 : null;
+          if (!isInbound) {
+            for (const a of it.sale_allocations ?? []) {
+              const c = allocCostCents(a, it.unit_price_cents);
+              if (c != null) {
+                costCents = (costCents ?? 0) + c;
+              }
             }
           }
           const marginCents =
@@ -878,12 +898,23 @@ function ItemSection({
                 </p>
               </div>
               <div className="text-right shrink-0">
-                <p className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+                <p
+                  className={
+                    isInbound
+                      ? "text-base font-semibold text-red-600 dark:text-red-400 tabular-nums"
+                      : "text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums"
+                  }
+                >
                   {fmt(effectiveLineTotal, txCurrency)}
                 </p>
-                {lineDiscountShare > 0 && (
+                {isInbound && (
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
+                    {fmt(rawLineTotal, txCurrency)} mkt × {pct}%
+                  </p>
+                )}
+                {!isInbound && lineDiscountShare > 0 && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400 tabular-nums">
-                    {fmt(lineTotal, txCurrency)} − {fmt(lineDiscountShare, txCurrency)}
+                    {fmt(rawLineTotal, txCurrency)} − {fmt(lineDiscountShare, txCurrency)}
                   </p>
                 )}
                 {costCents != null && marginCents != null && (
