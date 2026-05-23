@@ -122,6 +122,22 @@ export default function SaleDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  // Edit-mode draft. Populated when the user clicks Edit; written back on
+  // Save and discarded on Cancel. Quantity + grade aren't editable here —
+  // those have inventory implications best handled via delete + recreate.
+  type EditDraft = {
+    buyer_name: string;
+    buyer_email: string;
+    buyer_phone: string;
+    notes: string;
+    discount_dollars: string;
+    item_prices: Record<string, string>; // item_id → dollar string
+    payment_method: string;
+    payment_reference: string;
+  };
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const handleDelete = useCallback(async () => {
     if (!tx) return;
     const hasInbound = tx.transaction_items.some(
@@ -209,6 +225,120 @@ export default function SaleDetailPage() {
     load();
   }, [load]);
 
+  const startEdit = useCallback(() => {
+    if (!tx) return;
+    setEditDraft({
+      buyer_name: tx.buyer_contact?.name ?? "",
+      buyer_email: tx.buyer_contact?.email ?? "",
+      buyer_phone: tx.buyer_contact?.phone ?? "",
+      notes: tx.notes ?? "",
+      discount_dollars: (tx.discount_cents / 100).toFixed(2),
+      item_prices: Object.fromEntries(
+        tx.transaction_items.map((it) => [
+          it.id,
+          (it.unit_price_cents / 100).toFixed(2),
+        ]),
+      ),
+      payment_method: tx.order_payments[0]?.method ?? "",
+      payment_reference: tx.order_payments[0]?.reference ?? "",
+    });
+    setError(null);
+  }, [tx]);
+
+  const cancelEdit = useCallback(() => {
+    setEditDraft(null);
+    setError(null);
+  }, []);
+
+  const saveEdit = useCallback(async () => {
+    if (!tx || !editDraft) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const parseDollars = (s: string): number => {
+        const n = parseFloat(s);
+        return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 0;
+      };
+
+      // 1. Transaction-level fields (buyer / notes / discount). Triggers
+      //    auto-recalc totals when discount changes.
+      const newDiscount = parseDollars(editDraft.discount_dollars);
+      const buyer = {
+        name: editDraft.buyer_name.trim() || null,
+        email: editDraft.buyer_email.trim() || null,
+        phone: editDraft.buyer_phone.trim() || null,
+      };
+      const buyerJson =
+        buyer.name || buyer.email || buyer.phone ? buyer : null;
+      const { error: txErr } = await supabase
+        .schema("ecom")
+        .from("transactions")
+        .update({
+          notes: editDraft.notes.trim() || null,
+          buyer_contact: buyerJson,
+          discount_cents: newDiscount,
+        })
+        .eq("id", tx.id);
+      if (txErr) throw txErr;
+
+      // 2. Per-line unit prices. Only write rows that actually changed so
+      //    the items-recalc trigger doesn't fire pointlessly.
+      const itemUpdates = tx.transaction_items
+        .map((it) => {
+          const newCents = parseDollars(editDraft.item_prices[it.id] ?? "");
+          if (newCents === it.unit_price_cents) return null;
+          return { id: it.id, unit_price_cents: newCents };
+        })
+        .filter((x): x is { id: string; unit_price_cents: number } => !!x);
+      for (const upd of itemUpdates) {
+        const { error: itErr } = await supabase
+          .schema("ecom")
+          .from("transaction_items")
+          .update({ unit_price_cents: upd.unit_price_cents })
+          .eq("id", upd.id);
+        if (itErr) throw itErr;
+      }
+
+      // 3. Payment (when one exists). We edit the first / only payment
+      //    row — the POS flow only creates one. amount_cents stays in
+      //    sync via manual reconciliation; we don't auto-update it
+      //    because changing line prices may have changed the total.
+      const payment = tx.order_payments[0];
+      if (payment && editDraft.payment_method) {
+        const methodChanged = payment.method !== editDraft.payment_method;
+        const refChanged =
+          (payment.reference ?? "") !== (editDraft.payment_reference ?? "");
+        if (methodChanged || refChanged) {
+          const { error: payErr } = await supabase
+            .schema("ecom")
+            .from("order_payments")
+            .update({
+              method: editDraft.payment_method,
+              reference:
+                editDraft.payment_method === "payid_manual"
+                  ? editDraft.payment_reference.trim() || null
+                  : null,
+            })
+            .eq("id", payment.id);
+          if (payErr) throw payErr;
+        }
+      }
+
+      setEditDraft(null);
+      await load();
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e && "message" in e
+            ? String((e as { message: unknown }).message)
+            : "Save failed";
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
+  }, [tx, editDraft, supabase, load]);
+
   const outbound = useMemo(
     () =>
       tx?.transaction_items.filter(
@@ -261,14 +391,44 @@ export default function SaleDetailPage() {
           <span className="text-xs text-gray-400 dark:text-gray-500 font-mono">
             {tx.id.slice(0, 8)}
           </span>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={deleting}
-            className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-md disabled:opacity-50"
-          >
-            {deleting ? "Deleting…" : "Delete sale"}
-          </button>
+          {editDraft ? (
+            <>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-md disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-md disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={startEdit}
+                className="px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-md"
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="px-3 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-md disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete sale"}
+              </button>
+            </>
+          )}
         </div>
       </div>
       {error && (
@@ -307,15 +467,101 @@ export default function SaleDetailPage() {
             <Stat label="Trade %">{Number(tx.trade_value_pct).toFixed(0)}%</Stat>
           )}
         </dl>
-        {tx.notes && (
-          <p className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
-            {tx.notes}
-          </p>
+        {editDraft ? (
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="block text-sm">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Notes
+              </span>
+              <textarea
+                value={editDraft.notes}
+                onChange={(e) =>
+                  setEditDraft({ ...editDraft, notes: e.target.value })
+                }
+                rows={3}
+                className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Discount ({tx.currency})
+              </span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={editDraft.discount_dollars}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v !== "" && !/^\d*\.?\d{0,2}$/.test(v)) return;
+                  setEditDraft({ ...editDraft, discount_dollars: v });
+                }}
+                placeholder="0.00"
+                className="block w-32 px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm text-right tabular-nums"
+              />
+              <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                Subtracted from the subtotal. Triggers recompute the total.
+              </span>
+            </label>
+          </div>
+        ) : (
+          tx.notes && (
+            <p className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+              {tx.notes}
+            </p>
+          )
         )}
       </div>
 
       {/* Customer */}
-      {tx.buyer_contact &&
+      {editDraft ? (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+            Customer
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Name
+              </span>
+              <input
+                type="text"
+                value={editDraft.buyer_name}
+                onChange={(e) =>
+                  setEditDraft({ ...editDraft, buyer_name: e.target.value })
+                }
+                className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Email
+              </span>
+              <input
+                type="email"
+                value={editDraft.buyer_email}
+                onChange={(e) =>
+                  setEditDraft({ ...editDraft, buyer_email: e.target.value })
+                }
+                className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Phone
+              </span>
+              <input
+                type="text"
+                value={editDraft.buyer_phone}
+                onChange={(e) =>
+                  setEditDraft({ ...editDraft, buyer_phone: e.target.value })
+                }
+                className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+              />
+            </label>
+          </div>
+        </div>
+      ) : (
+        tx.buyer_contact &&
         (tx.buyer_contact.name || tx.buyer_contact.email || tx.buyer_contact.phone) && (
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
@@ -327,7 +573,8 @@ export default function SaleDetailPage() {
               {tx.buyer_contact.phone && <Stat label="Phone">{tx.buyer_contact.phone}</Stat>}
             </dl>
           </div>
-        )}
+        )
+      )}
 
       {/* Outbound items */}
       {outbound.length > 0 && (
@@ -340,6 +587,12 @@ export default function SaleDetailPage() {
           txCurrency={tx.currency}
           discountCents={tx.discount_cents}
           outgoingSubtotalCents={tx.outgoing_subtotal_cents}
+          editPrices={editDraft?.item_prices ?? null}
+          onPriceChange={(id, v) =>
+            setEditDraft((d) =>
+              d ? { ...d, item_prices: { ...d.item_prices, [id]: v } } : d,
+            )
+          }
         />
       )}
 
@@ -354,6 +607,12 @@ export default function SaleDetailPage() {
           txCurrency={tx.currency}
           discountCents={tx.discount_cents}
           outgoingSubtotalCents={tx.outgoing_subtotal_cents}
+          editPrices={editDraft?.item_prices ?? null}
+          onPriceChange={(id, v) =>
+            setEditDraft((d) =>
+              d ? { ...d, item_prices: { ...d.item_prices, [id]: v } } : d,
+            )
+          }
         />
       )}
 
@@ -363,29 +622,75 @@ export default function SaleDetailPage() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
             Payments
           </h2>
-          <ul className="divide-y divide-gray-100 dark:divide-gray-700">
-            {tx.order_payments.map((p) => (
-              <li key={p.id} className="py-3 flex items-center justify-between text-sm">
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-gray-100">
-                    {methodLabel(p.method)}
-                    {p.reference && (
-                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
-                        {p.reference}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    {p.status}
-                    {p.paid_at && ` · ${new Date(p.paid_at).toLocaleString()}`}
-                  </p>
-                </div>
-                <span className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                  {fmt(p.amount_cents, p.currency)}
+          {editDraft ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+              <label className="block">
+                <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                  Method
                 </span>
-              </li>
-            ))}
-          </ul>
+                <select
+                  value={editDraft.payment_method}
+                  onChange={(e) =>
+                    setEditDraft({
+                      ...editDraft,
+                      payment_method: e.target.value,
+                    })
+                  }
+                  className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="payid_manual">PayID</option>
+                  <option value="bank_transfer">Bank transfer</option>
+                </select>
+              </label>
+              {editDraft.payment_method === "payid_manual" && (
+                <label className="block">
+                  <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                    PayID reference
+                  </span>
+                  <input
+                    type="text"
+                    value={editDraft.payment_reference}
+                    onChange={(e) =>
+                      setEditDraft({
+                        ...editDraft,
+                        payment_reference: e.target.value,
+                      })
+                    }
+                    className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 font-mono text-sm"
+                  />
+                </label>
+              )}
+              <p className="md:col-span-2 text-[11px] text-gray-500 dark:text-gray-400">
+                Payment amount stays at the original recorded figure. If the
+                line prices or discount changed, reconcile manually.
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-gray-100 dark:divide-gray-700">
+              {tx.order_payments.map((p) => (
+                <li key={p.id} className="py-3 flex items-center justify-between text-sm">
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-gray-100">
+                      {methodLabel(p.method)}
+                      {p.reference && (
+                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400 font-mono">
+                          {p.reference}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {p.status}
+                      {p.paid_at && ` · ${new Date(p.paid_at).toLocaleString()}`}
+                    </p>
+                  </div>
+                  <span className="text-base font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                    {fmt(p.amount_cents, p.currency)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
@@ -412,6 +717,8 @@ function ItemSection({
   txCurrency,
   discountCents,
   outgoingSubtotalCents,
+  editPrices,
+  onPriceChange,
 }: {
   label: string;
   tone: "out" | "in";
@@ -421,6 +728,8 @@ function ItemSection({
   txCurrency: string;
   discountCents: number;
   outgoingSubtotalCents: number;
+  editPrices: Record<string, string> | null;
+  onPriceChange: (id: string, value: string) => void;
 }) {
   const accent =
     tone === "out"
@@ -509,8 +818,26 @@ function ItemSection({
                   </p>
                 )}
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  {gradeLabel(it.grading_service, it.grade)} · ×{it.quantity} ·{" "}
-                  {fmt(it.unit_price_cents, txCurrency)} each
+                  {gradeLabel(it.grading_service, it.grade)} · ×{it.quantity}
+                  {editPrices ? (
+                    <span className="ml-2 inline-flex items-center gap-1">
+                      <span className="text-gray-400">{txCurrency}</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={editPrices[it.id] ?? ""}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v !== "" && !/^\d*\.?\d{0,2}$/.test(v)) return;
+                          onPriceChange(it.id, v);
+                        }}
+                        className="w-20 px-2 py-0.5 text-xs text-right tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                      />
+                      <span className="text-gray-400">each</span>
+                    </span>
+                  ) : (
+                    <span> · {fmt(it.unit_price_cents, txCurrency)} each</span>
+                  )}
                 </p>
               </div>
               <div className="text-right shrink-0">
