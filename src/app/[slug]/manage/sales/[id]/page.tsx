@@ -9,6 +9,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
+import { lineDiscountShareCents } from "@/lib/transactions";
 import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +69,7 @@ type Tx = {
   status: string;
   currency: string;
   subtotal_cents: number;
+  outgoing_subtotal_cents: number;
   discount_cents: number;
   total_cents: number;
   notes: string | null;
@@ -154,7 +156,7 @@ export default function SaleDetailPage() {
       .from("transactions")
       .select(
         `
-          id, type, status, currency, subtotal_cents, discount_cents, total_cents, notes,
+          id, type, status, currency, subtotal_cents, outgoing_subtotal_cents, discount_cents, total_cents, notes,
           buyer_user_id, buyer_contact, trade_value_pct,
           source_provider, source_id, completed_at, created_at, updated_at,
           transaction_items (
@@ -336,6 +338,8 @@ export default function SaleDetailPage() {
           cards={cards}
           fmt={fmt}
           txCurrency={tx.currency}
+          discountCents={tx.discount_cents}
+          outgoingSubtotalCents={tx.outgoing_subtotal_cents}
         />
       )}
 
@@ -348,6 +352,8 @@ export default function SaleDetailPage() {
           cards={cards}
           fmt={fmt}
           txCurrency={tx.currency}
+          discountCents={tx.discount_cents}
+          outgoingSubtotalCents={tx.outgoing_subtotal_cents}
         />
       )}
 
@@ -404,6 +410,8 @@ function ItemSection({
   cards,
   fmt,
   txCurrency,
+  discountCents,
+  outgoingSubtotalCents,
 }: {
   label: string;
   tone: "out" | "in";
@@ -411,6 +419,8 @@ function ItemSection({
   cards: Map<string, CardLite>;
   fmt: (cents: number | null | undefined, txCurrency: string) => string;
   txCurrency: string;
+  discountCents: number;
+  outgoingSubtotalCents: number;
 }) {
   const accent =
     tone === "out"
@@ -418,6 +428,18 @@ function ItemSection({
       : "border-l-4 border-green-300 dark:border-green-700";
   const subtotal = items.reduce(
     (s, it) => s + it.unit_price_cents * it.quantity,
+    0,
+  );
+  const sectionDiscountAllocated = items.reduce(
+    (s, it) =>
+      s +
+      lineDiscountShareCents(
+        it.unit_price_cents,
+        it.quantity,
+        it.side,
+        discountCents,
+        outgoingSubtotalCents,
+      ),
     0,
   );
   return (
@@ -431,14 +453,29 @@ function ItemSection({
             ({items.length} item{items.length === 1 ? "" : "s"})
           </span>
         </h3>
-        <span className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
-          {fmt(subtotal, txCurrency)}
-        </span>
+        <div className="text-right">
+          <span className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
+            {fmt(subtotal - sectionDiscountAllocated, txCurrency)}
+          </span>
+          {sectionDiscountAllocated > 0 && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400 tabular-nums">
+              {fmt(subtotal, txCurrency)} − {fmt(sectionDiscountAllocated, txCurrency)} discount
+            </p>
+          )}
+        </div>
       </div>
       <ul className="divide-y divide-gray-100 dark:divide-gray-700">
         {items.map((it) => {
           const card = it.card_product_id ? cards.get(it.card_product_id) : null;
           const lineTotal = it.unit_price_cents * it.quantity;
+          const lineDiscountShare = lineDiscountShareCents(
+            it.unit_price_cents,
+            it.quantity,
+            it.side,
+            discountCents,
+            outgoingSubtotalCents,
+          );
+          const effectiveLineTotal = lineTotal - lineDiscountShare;
           let costCents: number | null = null;
           for (const a of it.sale_allocations ?? []) {
             const c = allocCostCents(a, it.unit_price_cents);
@@ -446,7 +483,8 @@ function ItemSection({
               costCents = (costCents ?? 0) + c;
             }
           }
-          const marginCents = costCents != null ? lineTotal - costCents : null;
+          const marginCents =
+            costCents != null ? effectiveLineTotal - costCents : null;
           return (
             <li
               key={it.id}
@@ -477,8 +515,13 @@ function ItemSection({
               </div>
               <div className="text-right shrink-0">
                 <p className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
-                  {fmt(lineTotal, txCurrency)}
+                  {fmt(effectiveLineTotal, txCurrency)}
                 </p>
+                {lineDiscountShare > 0 && (
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 tabular-nums">
+                    {fmt(lineTotal, txCurrency)} − {fmt(lineDiscountShare, txCurrency)}
+                  </p>
+                )}
                 {costCents != null && marginCents != null && (
                   <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
                     cost {fmt(costCents, txCurrency)} ·{" "}

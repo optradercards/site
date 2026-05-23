@@ -9,6 +9,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { resolveMarketValue, type MarketData } from "@/lib/pricing";
+import { lineDiscountShareCents } from "@/lib/transactions";
 import CardCell from "@/components/CardCell";
 import ZoomableImage from "@/components/ZoomableImage";
 
@@ -82,6 +83,14 @@ type LotRow = {
 
 type FullLot = LotRow & { consignor_dispute_notes: string | null };
 
+// Per-lot rollup of what the trader has sold from a consigned lot and
+// what they owe the consignor for those sales.
+type LotPayout = {
+  units_sold: number;
+  gross_cents: number;
+  payout_cents: number;
+};
+
 function gradeLabel(service: string | null, grade: string | null): string {
   if (!service || service === "ungraded") return "Ungraded";
   return grade ? `${service.toUpperCase()} ${grade}` : service.toUpperCase();
@@ -100,6 +109,33 @@ function statusColor(status: IntakeStatus): string {
     default:
       return "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300";
   }
+}
+
+function Stat({
+  label,
+  emphasis,
+  children,
+}: {
+  label: string;
+  emphasis?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
+        {label}
+      </div>
+      <div
+        className={
+          emphasis
+            ? "text-xl font-bold text-red-600 dark:text-red-400 tabular-nums"
+            : "text-xl font-semibold text-gray-900 dark:text-gray-100 tabular-nums"
+        }
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function acceptanceColor(a: ConsignorAcceptance): string {
@@ -132,6 +168,7 @@ export default function ConsignmentIntakeDetailPage() {
   const [intake, setIntake] = useState<IntakeRow | null>(null);
   const [contact, setContact] = useState<Contact | null>(null);
   const [lots, setLots] = useState<FullLot[]>([]);
+  const [lotPayouts, setLotPayouts] = useState<Map<string, LotPayout>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -236,6 +273,77 @@ export default function ConsignmentIntakeDetailPage() {
         consignor_dispute_notes: noteMap.get(l.lot_id) ?? null,
       })),
     );
+
+    // Pull sale_allocations for these lots (with the parent transaction's
+    // unit_price + status) so we can compute consignor payout.
+    const lotIds = lotsBase.map((l) => l.lot_id);
+    const nextPayouts = new Map<string, LotPayout>();
+    if (lotIds.length > 0) {
+      const { data: allocRows } = await supabase
+        .schema("ecom")
+        .from("sale_allocations")
+        .select(
+          "lot_id, quantity, consignor_split_pct_snapshot, consignor_chargeback_per_unit_snapshot, " +
+            "transaction_items!inner ( quantity, unit_price_cents, side, " +
+            "transactions!inner ( status, discount_cents, outgoing_subtotal_cents ) )",
+        )
+        .in("lot_id", lotIds);
+      type AllocRow = {
+        lot_id: string;
+        quantity: number;
+        consignor_split_pct_snapshot: number | null;
+        consignor_chargeback_per_unit_snapshot: number | null;
+        transaction_items: {
+          quantity: number;
+          unit_price_cents: number;
+          side: string;
+          transactions: {
+            status: string;
+            discount_cents: number;
+            outgoing_subtotal_cents: number;
+          };
+        };
+      };
+      for (const a of (allocRows ?? []) as unknown as AllocRow[]) {
+        if (a.transaction_items?.transactions?.status !== "completed") continue;
+        const ti = a.transaction_items;
+        const tx = ti.transactions;
+        // Effective gross for THIS alloc: take the item's effective line
+        // total (after pro-rata discount share) and apportion it across the
+        // alloc's quantity vs the item's total quantity. Lets a single
+        // transaction_item that drew from multiple lots still split fairly.
+        const lineTotal = ti.unit_price_cents * ti.quantity;
+        const lineShare = lineDiscountShareCents(
+          ti.unit_price_cents,
+          ti.quantity,
+          ti.side,
+          tx.discount_cents ?? 0,
+          tx.outgoing_subtotal_cents ?? 0,
+        );
+        const effectiveLineTotal = lineTotal - lineShare;
+        const gross =
+          ti.quantity > 0
+            ? Math.round((effectiveLineTotal * a.quantity) / ti.quantity)
+            : ti.unit_price_cents * a.quantity;
+        const pct = a.consignor_split_pct_snapshot;
+        const cb = a.consignor_chargeback_per_unit_snapshot ?? 0;
+        const payout =
+          pct != null
+            ? Math.max(0, Math.round((gross * Number(pct)) / 100) - cb * a.quantity)
+            : 0;
+        const prev = nextPayouts.get(a.lot_id) ?? {
+          units_sold: 0,
+          gross_cents: 0,
+          payout_cents: 0,
+        };
+        nextPayouts.set(a.lot_id, {
+          units_sold: prev.units_sold + a.quantity,
+          gross_cents: prev.gross_cents + gross,
+          payout_cents: prev.payout_cents + payout,
+        });
+      }
+    }
+    setLotPayouts(nextPayouts);
 
     setLoading(false);
   }, [supabase, id, activeAccountId]);
@@ -577,6 +685,46 @@ export default function ConsignmentIntakeDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Payout summary */}
+      {(() => {
+        let unitsAcquired = 0;
+        let unitsSold = 0;
+        let grossCents = 0;
+        let payoutCents = 0;
+        for (const l of lots) {
+          unitsAcquired += l.quantity_acquired;
+          const p = lotPayouts.get(l.lot_id);
+          if (p) {
+            unitsSold += p.units_sold;
+            grossCents += p.gross_cents;
+            payoutCents += p.payout_cents;
+          }
+        }
+        if (unitsAcquired === 0) return null;
+        const fmt = (c: number) =>
+          formatPrice(c, sellerCurrency, rates ?? {}, sellerCurrency);
+        return (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-5">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
+              Consignor payout
+            </h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Stat label="Units sold">
+                {unitsSold} <span className="text-sm text-gray-400">/ {unitsAcquired}</span>
+              </Stat>
+              <Stat label="Gross sales">{fmt(grossCents)}</Stat>
+              <Stat label="Owed to consignor" emphasis>
+                {fmt(payoutCents)}
+              </Stat>
+              <Stat label="Your share">{fmt(grossCents - payoutCents)}</Stat>
+            </div>
+            <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+              Computed from completed sales: <code>unit_price × qty × split% − chargeback × qty</code> per allocation. Unsold units aren't owed yet.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* Lots */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
