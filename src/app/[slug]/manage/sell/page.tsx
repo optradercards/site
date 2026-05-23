@@ -866,114 +866,125 @@ function ItemGroup({
             return (
               <li
                 key={it.key}
-                className="px-5 py-4 flex items-start gap-4 hover:bg-gray-50/50 dark:hover:bg-gray-700/20"
+                className="px-4 py-3 sm:px-5 sm:py-4 hover:bg-gray-50/50 dark:hover:bg-gray-700/20"
               >
-                {/* Thumbnail */}
-                <div className="w-14 h-20 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
-                  {it.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={it.image_url}
-                      alt={it.card_name}
-                      className="w-full h-full object-cover"
+                <div className="flex items-start gap-3 sm:gap-4">
+                  {/* Thumbnail */}
+                  <div className="w-14 h-20 shrink-0 bg-gray-100 dark:bg-gray-700 rounded overflow-hidden">
+                    {it.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={it.image_url}
+                        alt={it.card_name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : null}
+                  </div>
+
+                  {/* Name + meta */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-medium text-gray-900 dark:text-gray-100 line-clamp-2">
+                      {it.card_name}
+                    </p>
+                    {it.card_number && (
+                      <p className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5">
+                        #{it.card_number}
+                      </p>
+                    )}
+                    {it.set_name && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                        {it.set_name}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                      {it.listing_id
+                        ? gradeLabel(it.grading_service, it.grade)
+                        : "Trade-in from buyer"}
+                    </p>
+                  </div>
+
+                  {/* Remove */}
+                  <button
+                    type="button"
+                    onClick={() => onRemove(it.key)}
+                    className="self-start text-gray-300 hover:text-red-500 text-2xl leading-none w-10 h-10 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+                    aria-label="Remove"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Controls row — wraps below the name on narrow widths */}
+                <div className="mt-3 flex flex-wrap items-end gap-4 sm:pl-[4.5rem]">
+                  {/* Qty stepper */}
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                      Qty
+                    </label>
+                    <div className="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdate(it.key, {
+                            quantity: Math.max(1, it.quantity - 1),
+                          })
+                        }
+                        className="w-11 h-11 text-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 rounded-l-md"
+                        aria-label="Decrease quantity"
+                      >
+                        −
+                      </button>
+                      <span className="px-3 min-w-[3rem] text-center text-base font-medium text-gray-900 dark:text-gray-100 tabular-nums">
+                        {it.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdate(it.key, {
+                            quantity: Math.min(it.max_available, it.quantity + 1),
+                          })
+                        }
+                        className="w-11 h-11 text-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600 disabled:opacity-30 rounded-r-md"
+                        disabled={it.quantity >= it.max_available}
+                        aria-label="Increase quantity"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Unit price */}
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                      Unit price
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={(it.unit_price_cents / 100).toFixed(2)}
+                      onChange={(e) =>
+                        onUpdate(it.key, {
+                          unit_price_cents: Math.round(
+                            parseFloat(e.target.value || "0") * 100,
+                          ),
+                        })
+                      }
+                      step="0.01"
+                      min="0"
+                      className="w-28 h-11 px-3 text-right text-base rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 tabular-nums"
                     />
-                  ) : null}
-                </div>
+                  </div>
 
-                {/* Name + meta */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-base font-medium text-gray-900 dark:text-gray-100 line-clamp-2">
-                    {it.card_name}
-                  </p>
-                  {it.card_number && (
-                    <p className="text-xs font-mono text-gray-500 dark:text-gray-400 mt-0.5">
-                      #{it.card_number}
+                  {/* Line total */}
+                  <div className="ml-auto text-right">
+                    <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1">
+                      Total
+                    </label>
+                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 tabular-nums h-11 flex items-center justify-end">
+                      {formatPrice(lineTotal, currency, {}, currency)}
                     </p>
-                  )}
-                  {it.set_name && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
-                      {it.set_name}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
-                    {it.listing_id
-                      ? gradeLabel(it.grading_service, it.grade)
-                      : "Trade-in from buyer"}
-                  </p>
+                  </div>
                 </div>
-
-                {/* Qty stepper */}
-                <div className="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700 shrink-0 self-center">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdate(it.key, {
-                        quantity: Math.max(1, it.quantity - 1),
-                      })
-                    }
-                    className="px-2.5 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                    aria-label="Decrease quantity"
-                  >
-                    −
-                  </button>
-                  <span className="px-3 py-1.5 min-w-[2.5rem] text-center text-sm font-medium text-gray-900 dark:text-gray-100 tabular-nums">
-                    {it.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onUpdate(it.key, {
-                        quantity: Math.min(it.max_available, it.quantity + 1),
-                      })
-                    }
-                    className="px-2.5 py-1.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
-                    disabled={it.quantity >= it.max_available}
-                    aria-label="Increase quantity"
-                  >
-                    +
-                  </button>
-                </div>
-
-                {/* Unit price */}
-                <div className="shrink-0 self-center">
-                  <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">
-                    Unit
-                  </label>
-                  <input
-                    type="number"
-                    value={(it.unit_price_cents / 100).toFixed(2)}
-                    onChange={(e) =>
-                      onUpdate(it.key, {
-                        unit_price_cents: Math.round(
-                          parseFloat(e.target.value || "0") * 100,
-                        ),
-                      })
-                    }
-                    step="0.01"
-                    min="0"
-                    className="w-28 px-2 py-1.5 text-right text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 tabular-nums"
-                  />
-                </div>
-
-                {/* Line total */}
-                <div className="shrink-0 self-center text-right min-w-[6rem]">
-                  <label className="block text-[10px] uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-0.5">
-                    Total
-                  </label>
-                  <p className="text-base font-semibold text-gray-900 dark:text-gray-100 tabular-nums">
-                    {formatPrice(lineTotal, currency, {}, currency)}
-                  </p>
-                </div>
-
-                {/* Remove */}
-                <button
-                  type="button"
-                  onClick={() => onRemove(it.key)}
-                  className="self-start text-gray-300 hover:text-red-500 text-xl leading-none px-1"
-                  aria-label="Remove"
-                >
-                  ×
-                </button>
               </li>
             );
           })}
@@ -1013,8 +1024,8 @@ function SearchLine<T>({
   const showDropdown = value.trim().length > 0;
   const inputCls =
     size === "compact"
-      ? "w-full px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500"
-      : "w-full px-4 py-3 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500";
+      ? "w-full h-11 px-3 text-sm rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500"
+      : "w-full h-12 px-4 text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-red-500";
   return (
     <div className="relative">
       <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1">
