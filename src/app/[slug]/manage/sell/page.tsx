@@ -334,11 +334,28 @@ export default function SellPage() {
     };
   }, [outbound, inbound, tradePct]);
 
+  // Discount derived from the vendor-typed total override. Floors at 0
+  // (typing higher than the net doesn't become a surcharge — DB also
+  // CHECKs >= 0). Only meaningful when net > 0.
+  const discountCents = useMemo(() => {
+    const trimmed = totalOverrideInput.trim();
+    if (!trimmed) return 0;
+    const dollars = parseFloat(trimmed);
+    if (!Number.isFinite(dollars) || dollars < 0) return 0;
+    const overrideCents = Math.round(dollars * 100);
+    return Math.max(0, totals.net_cents - overrideCents);
+  }, [totalOverrideInput, totals.net_cents]);
+  const effectiveTotalCents = Math.max(0, totals.net_cents - discountCents);
+
   // --- Buyer + payment ---------------------------------------------------
   const [buyerName, setBuyerName] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
   const [customerModalOpen, setCustomerModalOpen] = useState(false);
+  // Empty string = no override (charge the full net). Anything else is the
+  // vendor-agreed final total in seller currency. We derive the discount
+  // from the difference, never the other way around.
+  const [totalOverrideInput, setTotalOverrideInput] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [payidRef, setPayidRef] = useState("");
   const [completing, setCompleting] = useState(false);
@@ -375,6 +392,7 @@ export default function SellPage() {
           buyer_contact,
           currency,
           trade_value_pct: txTradePct,
+          discount_cents: discountCents,
         })
         .select("id")
         .single();
@@ -417,15 +435,16 @@ export default function SellPage() {
         .select("id");
       if (itErr) throw itErr;
 
-      // 3. Payment (when net cash is owed to us)
-      if (totals.net_cents > 0) {
+      // 3. Payment (when net cash is owed to us) — discount-adjusted, so
+      //    the payment row matches what the customer actually handed over.
+      if (effectiveTotalCents > 0) {
         const { error: payErr } = await supabase
           .schema("ecom")
           .from("order_payments")
           .insert({
             transaction_id: tx.id,
             method: paymentMethod,
-            amount_cents: totals.net_cents,
+            amount_cents: effectiveTotalCents,
             currency,
             reference: paymentMethod === "payid_manual" ? payidRef || null : null,
             status: "received",
@@ -500,6 +519,7 @@ export default function SellPage() {
       setPaymentMethod("cash");
       setInvSearchInput("");
       setCatSearchInput("");
+      setTotalOverrideInput("");
     } catch (e) {
       // Supabase errors come back as plain objects, not Error instances —
       // dig out the message + code so we can actually see what failed.
@@ -524,6 +544,8 @@ export default function SellPage() {
     buyerPhone,
     canComplete,
     currency,
+    discountCents,
+    effectiveTotalCents,
     inbound.length,
     items,
     payidRef,
@@ -820,6 +842,14 @@ export default function SellPage() {
                 </div>
               </>
             )}
+            {discountCents > 0 && (
+              <div className="flex items-center justify-between text-gray-600 dark:text-gray-300">
+                <span>Discount</span>
+                <span className="tabular-nums text-amber-700 dark:text-amber-400">
+                  − {formatPrice(discountCents, currency, {}, currency)}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between text-base font-bold pt-1 border-t border-gray-100 dark:border-gray-700 mt-1">
               <span className="text-gray-700 dark:text-gray-200">
                 {totals.net_cents > 0
@@ -839,9 +869,48 @@ export default function SellPage() {
                       : "text-gray-900 dark:text-gray-100 tabular-nums"
                 }
               >
-                {formatPrice(Math.abs(totals.net_cents), currency, {}, currency)}
+                {formatPrice(
+                  Math.abs(totals.net_cents > 0 ? effectiveTotalCents : totals.net_cents),
+                  currency,
+                  {},
+                  currency,
+                )}
               </span>
             </div>
+
+            {/* Total override — type a round figure to apply a discount. Only
+                makes sense when there's actually a cash sale to discount. */}
+            {totals.net_cents > 0 && (
+              <div className="pt-2 mt-1 border-t border-gray-100 dark:border-gray-700">
+                <label className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-gray-500 dark:text-gray-400">
+                    Override total
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-gray-400 text-xs">{currency}</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={totalOverrideInput}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next !== "" && !/^\d*\.?\d{0,2}$/.test(next)) return;
+                        setTotalOverrideInput(next);
+                      }}
+                      placeholder={(totals.net_cents / 100).toFixed(2)}
+                      className="w-24 px-2 py-1 text-sm text-right rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 tabular-nums"
+                    />
+                  </div>
+                </label>
+                {totalOverrideInput.trim() &&
+                  parseFloat(totalOverrideInput) * 100 > totals.net_cents && (
+                    <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                      Override is higher than the cart subtotal — discount
+                      ignored, customer will pay the full subtotal.
+                    </p>
+                  )}
+              </div>
+            )}
           </div>
 
           {/* Payment */}
