@@ -9,6 +9,7 @@ import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice, SUPPORTED_CURRENCIES } from "@/lib/currency";
 import {
   gradeLabel,
+  relativeMarketAge,
   resolveMarketValue,
   previewMarketPrice,
   type MarketData,
@@ -382,8 +383,13 @@ export default function UnlistedPage() {
     );
 
     const mMap: Record<string, MarketData> = {};
-    for (const m of (marketRes.data ?? []) as MarketData[]) {
-      mMap[m.product_id] = m;
+    for (const m of (marketRes.data ?? []) as unknown as (MarketData & {
+      updated_at?: string | null;
+    })[]) {
+      mMap[m.product_id] = {
+        ...m,
+        market_updated_at: m.market_updated_at ?? m.updated_at ?? null,
+      };
     }
     setMarketMap(mMap);
 
@@ -1421,9 +1427,31 @@ export default function UnlistedPage() {
                     <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
                       {fmtCost(r.item.purchase_price_cents, r.item.purchase_price_currency)}
                     </td>
-                    <td className="px-4 py-3 text-right text-gray-900 dark:text-gray-100">
-                      {fmt(r.marketValueUsd != null ? Math.round(r.marketValueUsd * exchangeRate) : null)}
-                    </td>
+                    {(() => {
+                      const mkt = marketMap[r.item.product_id];
+                      const updatedAt = mkt?.market_updated_at ?? null;
+                      return (
+                        <td
+                          className="px-4 py-3 text-right text-gray-900 dark:text-gray-100"
+                          title={
+                            updatedAt
+                              ? `Market updated ${relativeMarketAge(updatedAt)} (${new Date(updatedAt).toLocaleString()})`
+                              : undefined
+                          }
+                        >
+                          {fmt(
+                            r.marketValueUsd != null
+                              ? Math.round(r.marketValueUsd * exchangeRate)
+                              : null,
+                          )}
+                          {updatedAt && (
+                            <div className="text-[10px] text-gray-400 dark:text-gray-500 font-normal">
+                              {relativeMarketAge(updatedAt)}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })()}
                     {/* Calculated \u2014 pure rule output, amber when staged price overrides */}
                     <td
                       className={`px-4 py-3 text-right ${

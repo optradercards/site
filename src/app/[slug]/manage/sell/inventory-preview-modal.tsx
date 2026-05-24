@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPrice } from "@/lib/currency";
-import { gradeLabel, resolveMarketValue, type MarketData } from "@/lib/pricing";
+import {
+  gradeLabel,
+  relativeMarketAge,
+  resolveMarketValue,
+  type MarketData,
+} from "@/lib/pricing";
 
 // Pre-sale inventory peek for the cards in the cart — vendor sees cost
 // basis, source (purchase/consignment), market reference and a FIFO margin
@@ -103,8 +108,13 @@ export default function InventoryPreviewModal({
       if (cancelled) return;
       setLots((lotsRes.data ?? []) as unknown as InventoryLot[]);
       const market = new Map<string, MarketData>();
-      for (const m of (marketRes.data ?? []) as MarketData[]) {
-        market.set(m.product_id, m);
+      for (const m of (marketRes.data ?? []) as unknown as (MarketData & {
+        updated_at?: string | null;
+      })[]) {
+        market.set(m.product_id, {
+          ...m,
+          market_updated_at: m.market_updated_at ?? m.updated_at ?? null,
+        });
       }
       setMarketByProduct(market);
       setLoading(false);
@@ -259,7 +269,14 @@ export default function InventoryPreviewModal({
                       </div>
                       <div className="text-right text-xs tabular-nums shrink-0">
                         {marketUsd != null && (
-                          <div className="text-gray-500 dark:text-gray-400">
+                          <div
+                            className="text-gray-500 dark:text-gray-400"
+                            title={
+                              market?.market_updated_at
+                                ? `Market updated ${relativeMarketAge(market.market_updated_at)} (${new Date(market.market_updated_at).toLocaleString()})`
+                                : undefined
+                            }
+                          >
                             mkt{" "}
                             <span className="font-medium">
                               {formatPrice(
@@ -269,6 +286,11 @@ export default function InventoryPreviewModal({
                                 "USD",
                               )}
                             </span>
+                            {market?.market_updated_at && (
+                              <span className="ml-1 text-[10px] text-gray-400 dark:text-gray-500">
+                                · {relativeMarketAge(market.market_updated_at)}
+                              </span>
+                            )}
                           </div>
                         )}
                         {isOutbound ? (
