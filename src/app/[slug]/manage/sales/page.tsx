@@ -9,6 +9,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { lineDiscountShareCents } from "@/lib/transactions";
+import { matchesQuery } from "@/lib/search";
 import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
@@ -361,12 +362,20 @@ export default function SalesPage() {
         if (dateTo && iso > dateTo) return false;
       }
       if (search.trim()) {
-        const needle = search.trim().toLowerCase();
-        const hay =
-          r.primaryItem?.card?.name?.toLowerCase() ??
-          r.primaryItem?.card?.card_number?.toLowerCase() ??
-          "";
-        if (!hay.includes(needle)) return false;
+        // Search every line on the ticket (name + card number), not just
+        // the first one — multi-item sales were missing matches when the
+        // hit was on line 2+. Also fold in buyer + notes since those are
+        // the next-most-useful things to search for.
+        const haystacks: (string | null | undefined)[] = [
+          r.tx.notes,
+          r.tx.buyer_contact?.name,
+          r.tx.buyer_contact?.email,
+          r.tx.buyer_contact?.phone,
+        ];
+        for (const it of r.tx.transaction_items) {
+          haystacks.push(it.card?.name, it.card?.card_number);
+        }
+        if (!matchesQuery(search, ...haystacks)) return false;
       }
       if (paymentFilter !== "all") {
         const methods = (r.tx.order_payments ?? []).map((p) => p.method);
