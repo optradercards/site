@@ -45,12 +45,16 @@ export default function InventoryPreviewModal({
   accountId,
   items,
   currency,
+  sellerCurrency,
+  rates,
 }: {
   isOpen: boolean;
   onClose: () => void;
   accountId: string | null;
   items: CartItemForPreview[];
   currency: string;
+  sellerCurrency: string;
+  rates: Record<string, number>;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [lots, setLots] = useState<InventoryLot[]>([]);
@@ -256,9 +260,14 @@ export default function InventoryPreviewModal({
                       <div className="text-right text-xs tabular-nums shrink-0">
                         {marketUsd != null && (
                           <div className="text-gray-500 dark:text-gray-400">
-                            mkt USD{" "}
+                            mkt{" "}
                             <span className="font-medium">
-                              ${(marketUsd / 100).toFixed(2)}
+                              {formatPrice(
+                                marketUsd,
+                                sellerCurrency,
+                                rates,
+                                "USD",
+                              )}
                             </span>
                           </div>
                         )}

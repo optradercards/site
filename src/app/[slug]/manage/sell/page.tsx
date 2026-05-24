@@ -1031,6 +1031,8 @@ export default function SellPage() {
           unit_price_cents: it.unit_price_cents,
         }))}
         currency={currency}
+        sellerCurrency={sellerCurrency}
+        rates={rates ?? {}}
       />
     </div>
   );
