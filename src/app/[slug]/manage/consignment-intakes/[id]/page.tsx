@@ -59,6 +59,7 @@ type LotRow = {
   product_name: string | null;
   image_url: string | null;
   set_name: string | null;
+  language: string | null;
   card_number: string | null;
   grading_service: string | null;
   grade: string | null;
@@ -245,7 +246,7 @@ export default function ConsignmentIntakeDetailPage() {
         .schema("ecom")
         .from("vendor_inventory_summary")
         .select(
-          "lot_id, card_product_id, product_name, image_url, set_name, card_number, grading_service, grade, quantity_acquired, consignor_acceptance, consignor_split_pct, " +
+          "lot_id, card_product_id, product_name, image_url, set_name, language, card_number, grading_service, grade, quantity_acquired, consignor_acceptance, consignor_split_pct, " +
             "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4, " +
             "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9, " +
             "price_psa_10, price_psa_9_5, price_bgs, price_cgc",
@@ -776,7 +777,15 @@ export default function ConsignmentIntakeDetailPage() {
                             name={l.product_name}
                             cardNumber={l.card_number}
                             setName={l.set_name}
+                            language={l.language}
                           />
+                          <Link
+                            href={`/${slug}/manage/inventory/${l.lot_id}`}
+                            className="mt-1 inline-block text-[11px] font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
+                            title="Open inventory lot"
+                          >
+                            Lot &rarr;
+                          </Link>
                         </td>
                         <td className="px-3 py-3 text-gray-600 dark:text-gray-400">
                           {gradeLabel(l.grading_service, l.grade)}

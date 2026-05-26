@@ -28,6 +28,7 @@ type LotSummary = {
   product_name: string | null;
   image_url: string | null;
   set_name: string | null;
+  language: string | null;
   card_number: string | null;
   grading_service: string | null;
   grade: string | null;
@@ -101,7 +102,7 @@ export default function GroupDetailPage() {
         .schema("ecom")
         .from("vendor_inventory_summary")
         .select(
-          "lot_id, card_product_id, product_name, image_url, set_name, card_number, grading_service, grade, quantity_remaining",
+          "lot_id, card_product_id, product_name, image_url, set_name, language, card_number, grading_service, grade, quantity_remaining",
         )
         .eq("account_id", activeAccountId)
         .order("product_name"),
@@ -349,11 +350,20 @@ export default function GroupDetailPage() {
                       name={lot.product_name}
                       cardNumber={lot.card_number}
                       setName={lot.set_name}
+                      language={lot.language}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
                       {gradeLabel(lot.grading_service, lot.grade)}
                       {" · qty "}
                       {lot.quantity_remaining}
+                      {" · "}
+                      <Link
+                        href={`/${slug}/manage/inventory/${lot.lot_id}`}
+                        className="font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
+                        title="Open inventory lot"
+                      >
+                        Lot &rarr;
+                      </Link>
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -422,11 +432,20 @@ export default function GroupDetailPage() {
                       name={lot.product_name}
                       cardNumber={lot.card_number}
                       setName={lot.set_name}
+                      language={lot.language}
                     />
                     <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
                       {gradeLabel(lot.grading_service, lot.grade)}
                       {" · qty "}
                       {lot.quantity_remaining}
+                      {" · "}
+                      <Link
+                        href={`/${slug}/manage/inventory/${lot.lot_id}`}
+                        className="font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
+                        title="Open inventory lot"
+                      >
+                        Lot &rarr;
+                      </Link>
                     </p>
                   </div>
                   <button

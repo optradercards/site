@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
@@ -59,6 +59,7 @@ type InventoryRow = {
   card_number: string | null;
   rarity: string | null;
   set_name: string | null;
+  language: string | null;
   brand_name: string | null;
   price_ungraded: number | null;
   price_psa_1: number | null;
@@ -128,7 +129,9 @@ export default function InventoryPage() {
   const params = useParams();
   const slug = params?.slug as string;
   const searchParams = useSearchParams();
+  const router = useRouter();
   const purchaseIdFilter = searchParams?.get("purchase_id") ?? null;
+  const cardProductIdFilter = searchParams?.get("card_product_id") ?? null;
   const sourceParam = searchParams?.get("source") ?? null;
 
   const { data: profileData } = useProfile();
@@ -216,6 +219,10 @@ export default function InventoryPage() {
       query = query.in("lot_id", ids);
     }
 
+    if (cardProductIdFilter) {
+      query = query.eq("card_product_id", cardProductIdFilter);
+    }
+
     const { data: invData } = await query;
     const lots = (invData ?? []) as InventoryRow[];
     setRows(lots);
@@ -273,7 +280,7 @@ export default function InventoryPage() {
     setGroupLinks((linksRes.data ?? []) as GroupItemLink[]);
 
     setLoading(false);
-  }, [supabase, activeAccountId, purchaseIdFilter]);
+  }, [supabase, activeAccountId, purchaseIdFilter, cardProductIdFilter]);
 
   useEffect(() => {
     loadData();
@@ -335,7 +342,15 @@ export default function InventoryPage() {
       if (sourceFilter !== "all" && r.acquisition_source !== sourceFilter) return false;
       if (consignedOnly && r.acquisition_source !== "consignment") return false;
       if (search.trim()) {
-        if (!matchesQuery(search, r.product_name, r.set_name, r.card_number)) {
+        if (
+          !matchesQuery(
+            search,
+            r.product_name,
+            r.set_name,
+            r.card_number,
+            r.language,
+          )
+        ) {
           return false;
         }
       }
@@ -559,7 +574,10 @@ export default function InventoryPage() {
           <table className="w-full text-sm text-left">
             <thead className="bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 uppercase text-xs">
               <tr>
-                <th className="px-4 py-3"></th>
+                {/* Fixed-width image column so a long Groups cell can't
+                    collapse the thumbnail. min/max width pin it; w-20 also
+                    sets the natural width hint for table-auto layout. */}
+                <th className="px-4 py-3 w-20 min-w-[5rem] max-w-[5rem]"></th>
                 <SortTh col="card" align="left" sort={sort} onToggle={toggleSort}>Card</SortTh>
                 <SortTh col="grade" align="left" sort={sort} onToggle={toggleSort}>Grade</SortTh>
                 <SortTh col="qty" align="right" sort={sort} onToggle={toggleSort}>Qty</SortTh>
@@ -604,17 +622,20 @@ export default function InventoryPage() {
                 return (
                   <tr
                     key={r.lot_id}
-                    className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                    onClick={() =>
+                      router.push(`/${slug}/manage/inventory/${r.lot_id}`)
+                    }
+                    className="align-top hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer"
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 w-20 min-w-[5rem] max-w-[5rem]">
                       {r.image_url ? (
                         <ZoomableImage
                           src={r.image_url}
                           alt={r.product_name ?? ""}
-                          className="w-10 h-14 object-contain rounded"
+                          className="w-14 h-[5rem] object-contain rounded bg-gray-50 dark:bg-gray-900"
                         />
                       ) : (
-                        <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded flex items-center justify-center text-xs text-gray-400">
+                        <div className="w-14 h-[5rem] bg-gray-200 dark:bg-gray-600 rounded flex items-center justify-center text-xs text-gray-400">
                           {"—"}
                         </div>
                       )}
@@ -625,6 +646,7 @@ export default function InventoryPage() {
                         name={r.product_name}
                         cardNumber={r.card_number}
                         setName={r.set_name}
+                        language={r.language}
                       />
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
@@ -713,7 +735,10 @@ export default function InventoryPage() {
                         "—"
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <td
+                      className="px-4 py-3 text-right whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Link
                         href={`/${slug}/manage/inventory/${r.lot_id}`}
                         className="text-sm font-medium text-red-500 hover:text-red-600"
@@ -722,7 +747,10 @@ export default function InventoryPage() {
                       </Link>
                       <button
                         type="button"
-                        onClick={() => handleDelete(r.lot_id, r.product_name)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(r.lot_id, r.product_name);
+                        }}
                         disabled={deletingLotId === r.lot_id}
                         className="ml-3 text-sm font-medium text-gray-400 hover:text-red-600 disabled:opacity-50"
                         title="Permanently delete this lot"

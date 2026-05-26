@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { applyMultiWordIlike } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // CardPicker — keyboard-driven inline search for cards.products_with_details,
@@ -102,17 +103,19 @@ export const CardPicker = forwardRef<CardPickerHandle, Props>(function CardPicke
         return;
       }
       setSearching(true);
-      const { data } = await supabase
-        .schema("cards")
-        .from("products_with_details")
-        .select(
-          "id, name, image_url, set_name, card_number, rarity," +
-            "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4," +
-            "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9," +
-            "price_psa_10, price_psa_9_5, price_bgs, price_cgc",
-        )
-        .or(`name.ilike.%${term}%,card_number.ilike.%${term}%`)
-        .limit(20);
+      const { data } = await applyMultiWordIlike(
+        supabase
+          .schema("cards")
+          .from("products_with_details")
+          .select(
+            "id, name, image_url, set_name, card_number, rarity," +
+              "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4," +
+              "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9," +
+              "price_psa_10, price_psa_9_5, price_bgs, price_cgc",
+          ),
+        term,
+        ["name", "card_number", "language"],
+      ).limit(20);
       if (!cancelled) {
         setResults((data ?? []) as unknown as CardOption[]);
         setHighlight(0);

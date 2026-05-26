@@ -39,6 +39,9 @@ export default function PurchasesPage() {
   const [rows, setRows] = useState<PurchaseRow[]>([]);
   const [lotCounts, setLotCounts] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!activeAccountId) return;
@@ -77,6 +80,34 @@ export default function PurchasesPage() {
     loadData();
   }, [loadData]);
 
+  const deletePurchase = async (r: PurchaseRow) => {
+    const lots = lotCounts.get(r.id) ?? 0;
+    const label = `${new Date(r.purchased_at).toLocaleDateString()} — ${formatPrice(r.total_cents, r.purchase_currency, {}, r.purchase_currency)}`;
+    if (
+      !window.confirm(
+        `Delete purchase ${label}? This removes the purchase and its ${lots} lot${lots === 1 ? "" : "s"}. Refused if any lot has already been sold.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(r.id);
+    setError(null);
+    setNotice(null);
+    const { data, error: rpcErr } = await supabase
+      .schema("ecom")
+      .rpc("delete_purchase", { p_purchase_id: r.id });
+    setDeletingId(null);
+    if (rpcErr) {
+      setError(rpcErr.message);
+      return;
+    }
+    const payload = (data ?? {}) as { lots_deleted?: number };
+    setNotice(
+      `Deleted purchase + ${payload.lots_deleted ?? 0} lot${(payload.lots_deleted ?? 0) === 1 ? "" : "s"}.`,
+    );
+    await loadData();
+  };
+
   const totals = useMemo(() => {
     let total = 0;
     let shipping = 0;
@@ -109,6 +140,17 @@ export default function PurchasesPage() {
           Record purchase
         </Link>
       </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded text-red-700 dark:text-red-300 text-sm">
+          {error}
+        </div>
+      )}
+      {notice && (
+        <div className="mb-4 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800 rounded text-green-700 dark:text-green-300 text-sm">
+          {notice}
+        </div>
+      )}
 
       {/* Summary */}
       {rows.length > 0 && (
@@ -156,6 +198,7 @@ export default function PurchasesPage() {
                 <th className="px-4 py-3">Allocation</th>
                 <th className="px-4 py-3 text-right">Lots</th>
                 <th className="px-4 py-3">Receipt</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
@@ -212,6 +255,20 @@ export default function PurchasesPage() {
                       ) : (
                         <span className="text-gray-400 text-xs">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void deletePurchase(r);
+                        }}
+                        disabled={deletingId === r.id}
+                        className="px-2 py-1 text-xs font-medium rounded text-red-700 dark:text-red-300 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 disabled:opacity-50"
+                        title="Delete this purchase and reverse its inventory (refuses if any lot has been sold)"
+                      >
+                        {deletingId === r.id ? "Deleting…" : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 );

@@ -500,6 +500,7 @@ export default function LabelsPage() {
                         name={r.listing.card_name}
                         cardNumber={r.listing.card_number}
                         setName={r.listing.set_name}
+                        language={r.listing.language}
                       />
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">

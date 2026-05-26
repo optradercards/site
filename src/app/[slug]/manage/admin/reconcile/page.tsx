@@ -1187,6 +1187,7 @@ export default function InventoryReconcilePage() {
                                 rates={rates ?? {}}
                                 creatingKey={creatingKey}
                                 onCreateRow={createLotForRow}
+                                slug={slug}
                               />
                             </td>
                           </tr>
@@ -1233,12 +1234,14 @@ function BucketDetail({
   rates,
   creatingKey,
   onCreateRow,
+  slug,
 }: {
   bucket: Bucket;
   sellerCurrency: string;
   rates: Record<string, number>;
   creatingKey: string | null;
   onCreateRow: (b: Bucket, row: CsvRow, rowIdx: number) => void;
+  slug: string;
 }) {
   const showCreate =
     bucket.card_product_id != null &&
@@ -1351,8 +1354,14 @@ function BucketDetail({
                   <td className="text-left pr-2 py-1 text-gray-600 dark:text-gray-400 whitespace-nowrap">
                     {l.acquisition_source}
                   </td>
-                  <td className="text-left pr-2 py-1 text-gray-500 dark:text-gray-500 font-mono text-[10px] truncate max-w-[120px]">
-                    {l.id.slice(0, 8)}
+                  <td className="text-left pr-2 py-1 font-mono text-[10px] truncate max-w-[120px]">
+                    <Link
+                      href={`/${slug}/manage/inventory/${l.id}`}
+                      className="text-gray-500 dark:text-gray-500 hover:text-red-600"
+                      title="Open inventory lot"
+                    >
+                      {l.id.slice(0, 8)}
+                    </Link>
                   </td>
                 </tr>
               ))}

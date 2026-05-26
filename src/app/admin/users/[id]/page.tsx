@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { applyMultiWordIlike } from "@/lib/search";
 
 interface UserDetail {
   user_id: string;
@@ -340,12 +341,14 @@ function ProductPicker({
     }
     const t = setTimeout(async () => {
       setSearching(true);
-      const { data } = await supabase
-        .schema("cards")
-        .from("products_with_details")
-        .select("id, name, image_url, card_number, rarity, set_name, brand_name")
-        .or(`name.ilike.%${query.trim()}%,card_number.ilike.%${query.trim()}%`)
-        .limit(20);
+      const { data } = await applyMultiWordIlike(
+        supabase
+          .schema("cards")
+          .from("products_with_details")
+          .select("id, name, image_url, card_number, rarity, set_name, brand_name"),
+        query,
+        ["name", "card_number", "language"],
+      ).limit(20);
       setResults((data ?? []) as ProductSearchRow[]);
       setSearching(false);
     }, 200);

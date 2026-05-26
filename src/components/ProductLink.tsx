@@ -25,6 +25,7 @@ export default function ProductLink({
       href={`/products/${cardProductId}`}
       target="_blank"
       rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
       className={`hover:text-red-500 hover:underline inline-flex items-center gap-1 ${className}`}
       title={title}
     >

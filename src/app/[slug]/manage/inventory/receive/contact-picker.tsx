@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { applyMultiWordIlike } from "@/lib/search";
 
 // ---------------------------------------------------------------------------
 // ContactPicker — keyboard-driven inline search for ecom.contacts (scoped to
@@ -114,15 +115,15 @@ export const ContactPicker = forwardRef<ContactPickerHandle, Props>(
           return;
         }
         setSearching(true);
-        // Escape % and _ in user input for ilike pattern. (PostgREST passes
-        // through.)
-        const safe = term.replace(/[%_]/g, (m) => `\\${m}`);
-        const { data } = await supabase
-          .schema("ecom")
-          .from("contacts")
-          .select("id, account_id, name, email, phone, linked_account_id, link_status")
-          .eq("account_id", accountId)
-          .or(`name.ilike.%${safe}%,email.ilike.%${safe}%`)
+        const { data } = await applyMultiWordIlike(
+          supabase
+            .schema("ecom")
+            .from("contacts")
+            .select("id, account_id, name, email, phone, linked_account_id, link_status")
+            .eq("account_id", accountId),
+          term,
+          ["name", "email"],
+        )
           .order("name", { ascending: true })
           .limit(20);
         if (!cancelled) {

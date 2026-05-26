@@ -75,6 +75,7 @@ export type EcomListing = {
   card_number: string | null;
   rarity: string | null;
   set_name: string;
+  language: string | null;
   brand_name: string;
   brand_icon: string | null;
   seller_slug: string;

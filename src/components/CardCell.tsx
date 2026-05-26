@@ -4,7 +4,7 @@ import ProductLink from "@/components/ProductLink";
 
 // Two-line card identity cell used across /manage list tables.
 // Line 1: card name (linked to /products/{id}) + inline #card_number.
-// Line 2: set name in muted text.
+// Line 2: set name + optional language chip in muted text.
 // When cardProductId is null (custom products, deleted catalog rows),
 // the name renders as plain text via ProductLink's fallthrough.
 export default function CardCell({
@@ -12,12 +12,14 @@ export default function CardCell({
   name,
   cardNumber,
   setName,
+  language,
   showIcon = true,
 }: {
   cardProductId: string | null | undefined;
   name: string | null | undefined;
   cardNumber: string | null | undefined;
   setName: string | null | undefined;
+  language?: string | null | undefined;
   showIcon?: boolean;
 }) {
   return (
@@ -32,8 +34,16 @@ export default function CardCell({
           #{cardNumber}
         </div>
       )}
-      <div className="text-xs text-gray-500 dark:text-gray-400">
-        {setName ?? "—"}
+      <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 flex-wrap">
+        <span>{setName ?? "—"}</span>
+        {language && (
+          <span
+            className="inline-block px-1.5 py-0.5 text-[10px] uppercase tracking-wide font-medium rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+            title="Language"
+          >
+            {language}
+          </span>
+        )}
       </div>
     </div>
   );

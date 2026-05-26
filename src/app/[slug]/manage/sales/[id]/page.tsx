@@ -9,7 +9,9 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
+import { applyMultiWordIlike } from "@/lib/search";
 import { lineDiscountShareCents } from "@/lib/transactions";
+import CustomerSearchModal from "@/app/[slug]/manage/sell/customer-search-modal";
 import ZoomableImage from "@/components/ZoomableImage";
 
 // ---------------------------------------------------------------------------
@@ -106,6 +108,27 @@ function methodLabel(m: string): string {
   return m;
 }
 
+// ISO timestamp → datetime-local input value, in the user's local timezone.
+function toLocalDatetimeInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  );
+}
+
+// datetime-local string → ISO. Empty input returns null so completed_at
+// can be cleared (Date header falls back to created_at).
+function fromLocalDatetimeInput(local: string): string | null {
+  const s = local.trim();
+  if (!s) return null;
+  const d = new Date(s);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
 export default function SaleDetailPage() {
   const supabase = createClient();
   const params = useParams();
@@ -136,9 +159,14 @@ export default function SaleDetailPage() {
     item_prices: Record<string, string>; // item_id → dollar string
     payment_method: string;
     payment_reference: string;
+    // Local-time string in datetime-local format ("YYYY-MM-DDTHH:mm").
+    // Saved back as ISO into transactions.completed_at — falls back to
+    // created_at on the Date header when null.
+    completed_at_local: string;
   };
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [customerModalOpen, setCustomerModalOpen] = useState(false);
 
   const handleDelete = useCallback(async () => {
     if (!tx) return;
@@ -227,6 +255,43 @@ export default function SaleDetailPage() {
     load();
   }, [load]);
 
+  const handleRemoveItem = useCallback(
+    async (item: Item) => {
+      const isInbound = item.side === "traded_in" || item.side === "bought";
+      const warn = isInbound
+        ? "\n\nNote: the inventory lot this trade-in created will NOT be removed. Delete it manually from /manage/inventory if needed."
+        : "";
+      if (
+        !window.confirm(
+          `Remove this line from the sale? ${
+            isInbound
+              ? "The line is dropped from the ticket."
+              : "Inventory will be returned to stock."
+          }${warn}`,
+        )
+      ) {
+        return;
+      }
+      const { error: rpcErr } = await supabase
+        .schema("ecom")
+        .rpc("delete_transaction_item", { p_item_id: item.id });
+      if (rpcErr) {
+        setError(rpcErr.message);
+        return;
+      }
+      // Pull editDraft.item_prices[id] so the next Save doesn't try to
+      // touch the now-deleted item.
+      setEditDraft((d) => {
+        if (!d) return d;
+        const next = { ...d.item_prices };
+        delete next[item.id];
+        return { ...d, item_prices: next };
+      });
+      await load();
+    },
+    [supabase, load],
+  );
+
   const startEdit = useCallback(() => {
     if (!tx) return;
     setEditDraft({
@@ -245,6 +310,9 @@ export default function SaleDetailPage() {
       ),
       payment_method: tx.order_payments[0]?.method ?? "",
       payment_reference: tx.order_payments[0]?.reference ?? "",
+      completed_at_local: toLocalDatetimeInput(
+        tx.completed_at ?? tx.created_at,
+      ),
     });
     setError(null);
   }, [tx]);
@@ -280,6 +348,7 @@ export default function SaleDetailPage() {
         pctNum != null && Number.isFinite(pctNum) && pctNum >= 0 && pctNum <= 200
           ? pctNum
           : null;
+      const newCompletedAt = fromLocalDatetimeInput(editDraft.completed_at_local);
       const { error: txErr } = await supabase
         .schema("ecom")
         .from("transactions")
@@ -288,15 +357,20 @@ export default function SaleDetailPage() {
           buyer_contact: buyerJson,
           discount_cents: newDiscount,
           trade_value_pct: newTradePct,
+          completed_at: newCompletedAt,
         })
         .eq("id", tx.id);
       if (txErr) throw txErr;
 
       // 2. Per-line unit prices. Only write rows that actually changed so
-      //    the items-recalc trigger doesn't fire pointlessly.
+      //    the items-recalc trigger doesn't fire pointlessly. Skip items
+      //    that don't have an entry in editDraft.item_prices (i.e. items
+      //    added via "Add line item" after edit mode opened — they keep
+      //    the price the picker submitted instead of being reset to 0).
       const itemUpdates = tx.transaction_items
         .map((it) => {
-          const newCents = parseDollars(editDraft.item_prices[it.id] ?? "");
+          if (!(it.id in editDraft.item_prices)) return null;
+          const newCents = parseDollars(editDraft.item_prices[it.id]);
           if (newCents === it.unit_price_cents) return null;
           return { id: it.id, unit_price_cents: newCents };
         })
@@ -495,6 +569,26 @@ export default function SaleDetailPage() {
             </label>
             <label className="block text-sm">
               <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
+                Sale date
+              </span>
+              <input
+                type="datetime-local"
+                value={editDraft.completed_at_local}
+                onChange={(e) =>
+                  setEditDraft({
+                    ...editDraft,
+                    completed_at_local: e.target.value,
+                  })
+                }
+                className="block w-full px-3 py-2 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-sm"
+              />
+              <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-1">
+                Sets transactions.completed_at. Clear to fall back to the
+                created_at timestamp on the Date stat.
+              </span>
+            </label>
+            <label className="block text-sm">
+              <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
                 Discount ({tx.currency})
               </span>
               <input
@@ -553,9 +647,18 @@ export default function SaleDetailPage() {
       {/* Customer */}
       {editDraft ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">
-            Customer
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Customer
+            </h2>
+            <button
+              type="button"
+              onClick={() => setCustomerModalOpen(true)}
+              className="text-sm font-medium text-red-500 hover:text-red-600"
+            >
+              Find customer
+            </button>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
             <label className="block">
               <span className="block text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">
@@ -635,6 +738,7 @@ export default function SaleDetailPage() {
               d ? { ...d, item_prices: { ...d.item_prices, [id]: v } } : d,
             )
           }
+          onRemove={editDraft ? handleRemoveItem : undefined}
         />
       )}
 
@@ -659,6 +763,19 @@ export default function SaleDetailPage() {
               d ? { ...d, item_prices: { ...d.item_prices, [id]: v } } : d,
             )
           }
+          onRemove={editDraft ? handleRemoveItem : undefined}
+        />
+      )}
+
+      {/* Add line item — edit mode only */}
+      {editDraft && activeAccountId && (
+        <AddLineItemSection
+          accountId={activeAccountId}
+          transactionId={tx.id}
+          currency={tx.currency}
+          onAdded={async () => {
+            await load();
+          }}
         />
       )}
 
@@ -739,6 +856,548 @@ export default function SaleDetailPage() {
           )}
         </div>
       )}
+
+      <CustomerSearchModal
+        isOpen={customerModalOpen}
+        onClose={() => setCustomerModalOpen(false)}
+        accountId={activeAccountId}
+        onSelect={(c) => {
+          if (!editDraft) return;
+          setEditDraft({
+            ...editDraft,
+            buyer_name: c.name ?? "",
+            buyer_email: c.email ?? "",
+            buyer_phone: c.phone ?? "",
+          });
+        }}
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddLineItemSection — inline picker for adding items to an in-flight sale
+// edit. Two modes:
+//   • "sale"    → search active listings → allocate from inventory (RPC).
+//   • "tradein" → search catalog → insert transaction_item + new lot.
+// Currency lives on the parent transaction; trade-in unit_price is in tx
+// currency and is what we record as the lot's acquisition cost.
+// ---------------------------------------------------------------------------
+type AddListingResult = {
+  id: string;
+  card_product_id: string | null;
+  card_name: string | null;
+  card_number: string | null;
+  grading_service: string | null;
+  grade: string | null;
+  price_cents: number | null;
+  quantity: number;
+  image_url: string | null;
+};
+
+type AddCatalogResult = {
+  id: string;
+  name: string | null;
+  card_number: string | null;
+  image_url: string | null;
+  set_name: string | null;
+  language: string | null;
+};
+
+function AddLineItemSection({
+  accountId,
+  transactionId,
+  currency,
+  onAdded,
+}: {
+  accountId: string;
+  transactionId: string;
+  currency: string;
+  onAdded: () => Promise<void>;
+}) {
+  const supabase = useMemo(() => createClient(), []);
+  const [mode, setMode] = useState<"sale" | "tradein" | null>(null);
+
+  // Search state — shared between modes; cleared on mode switch.
+  const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [listings, setListings] = useState<AddListingResult[]>([]);
+  const [catalog, setCatalog] = useState<AddCatalogResult[]>([]);
+  const [picked, setPicked] = useState<
+    | { kind: "listing"; row: AddListingResult }
+    | { kind: "catalog"; row: AddCatalogResult }
+    | null
+  >(null);
+
+  // Per-mode form state.
+  const [qty, setQty] = useState("1");
+  const [unitPriceDollars, setUnitPriceDollars] = useState("");
+  const [grading, setGrading] = useState("ungraded");
+  const [grade, setGrade] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const resetMode = () => {
+    setMode(null);
+    setSearch("");
+    setListings([]);
+    setCatalog([]);
+    setPicked(null);
+    setQty("1");
+    setUnitPriceDollars("");
+    setGrading("ungraded");
+    setGrade("");
+    setErr(null);
+  };
+
+  // Debounced search — runs whichever query matches the active mode.
+  useEffect(() => {
+    if (!mode) return;
+    const term = search.trim();
+    if (!term) {
+      setListings([]);
+      setCatalog([]);
+      return;
+    }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      setSearching(true);
+      if (mode === "sale") {
+        const { data } = await applyMultiWordIlike(
+          supabase
+            .schema("ecom")
+            .from("listing_details")
+            .select(
+              "id, card_product_id, card_name, card_number, grading_service, grade, price_cents, quantity, image_url",
+            )
+            .eq("account_id", accountId)
+            .eq("status", "active")
+            .gt("quantity", 0),
+          term,
+          ["card_name", "card_number", "language"],
+        ).limit(20);
+        if (!cancelled) setListings((data ?? []) as AddListingResult[]);
+      } else {
+        const { data } = await applyMultiWordIlike(
+          supabase
+            .schema("cards")
+            .from("products_with_details")
+            .select("id, name, image_url, card_number, set_name, language"),
+          term,
+          ["name", "card_number", "language"],
+        ).limit(20);
+        if (!cancelled) setCatalog((data ?? []) as AddCatalogResult[]);
+      }
+      if (!cancelled) setSearching(false);
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [mode, search, accountId, supabase]);
+
+  const pickListing = (l: AddListingResult) => {
+    setPicked({ kind: "listing", row: l });
+    setQty("1");
+    setUnitPriceDollars(
+      l.price_cents != null ? (l.price_cents / 100).toFixed(2) : "",
+    );
+    setErr(null);
+  };
+
+  const pickCatalog = (c: AddCatalogResult) => {
+    setPicked({ kind: "catalog", row: c });
+    setQty("1");
+    setUnitPriceDollars("");
+    setGrading("ungraded");
+    setGrade("");
+    setErr(null);
+  };
+
+  const submitSaleLine = async () => {
+    if (!picked || picked.kind !== "listing") return;
+    const l = picked.row;
+    const q = Math.max(1, Math.floor(Number(qty) || 0));
+    if (q > l.quantity) {
+      setErr(`Only ${l.quantity} in stock for this listing.`);
+      return;
+    }
+    const priceCents = Math.round(parseFloat(unitPriceDollars) * 100);
+    if (!Number.isFinite(priceCents) || priceCents < 0) {
+      setErr("Unit price must be a non-negative number.");
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const { data: inserted, error: iErr } = await supabase
+        .schema("ecom")
+        .from("transaction_items")
+        .insert({
+          transaction_id: transactionId,
+          side: "sold",
+          listing_id: l.id,
+          card_product_id: l.card_product_id,
+          grading_service: l.grading_service,
+          grade: l.grade,
+          quantity: q,
+          unit_price_cents: priceCents,
+        })
+        .select("id")
+        .single();
+      if (iErr || !inserted) throw iErr ?? new Error("Insert failed");
+      const { error: rpcErr } = await supabase
+        .schema("ecom")
+        .rpc("fulfill_sale_from_lots", {
+          p_transaction_item_id: inserted.id,
+          p_listing_id: l.id,
+          p_quantity: q,
+        });
+      if (rpcErr) {
+        // Roll back the orphaned transaction_item so the totals don't
+        // include an unfulfilled line.
+        await supabase
+          .schema("ecom")
+          .from("transaction_items")
+          .delete()
+          .eq("id", inserted.id);
+        throw rpcErr;
+      }
+      await onAdded();
+      resetMode();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not add line.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitTradeinLine = async () => {
+    if (!picked || picked.kind !== "catalog") return;
+    const c = picked.row;
+    const q = Math.max(1, Math.floor(Number(qty) || 0));
+    const priceCents = Math.round(parseFloat(unitPriceDollars) * 100);
+    if (!Number.isFinite(priceCents) || priceCents < 0) {
+      setErr("Trade-in value must be a non-negative number.");
+      return;
+    }
+    const gradeText =
+      grading === "ungraded" ? null : grade.trim() ? grade.trim() : null;
+    setSubmitting(true);
+    setErr(null);
+    try {
+      const { data: inserted, error: iErr } = await supabase
+        .schema("ecom")
+        .from("transaction_items")
+        .insert({
+          transaction_id: transactionId,
+          side: "traded_in",
+          card_product_id: c.id,
+          grading_service: grading,
+          grade: gradeText,
+          quantity: q,
+          unit_price_cents: priceCents,
+        })
+        .select("id")
+        .single();
+      if (iErr || !inserted) throw iErr ?? new Error("Insert failed");
+      // Mint the inventory lot the trade-in landed into. acquired_at uses
+      // "now" — caller can edit the lot later if backdating matters.
+      const { error: lotErr } = await supabase
+        .schema("ecom")
+        .from("inventory_lots")
+        .insert({
+          account_id: accountId,
+          card_product_id: c.id,
+          grading_service: grading,
+          grade: gradeText,
+          quantity_acquired: q,
+          quantity_remaining: q,
+          acquisition_cost_cents: priceCents,
+          acquisition_currency: currency,
+          acquisition_source: "trade_in",
+          acquired_at: new Date().toISOString(),
+          notes: `Trade-in from sell ticket ${transactionId} (added via edit)`,
+        });
+      if (lotErr) {
+        await supabase
+          .schema("ecom")
+          .from("transaction_items")
+          .delete()
+          .eq("id", inserted.id);
+        throw lotErr;
+      }
+      await onAdded();
+      resetMode();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not add trade-in.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fmt = (cents: number | null | undefined) =>
+    cents == null
+      ? "—"
+      : `${currency} ${(cents / 100).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}`;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+          Add line item
+        </h2>
+        {mode && (
+          <button
+            type="button"
+            onClick={resetMode}
+            className="text-xs text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+
+      {!mode ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("sale")}
+            className="px-3 py-2 text-sm font-medium rounded bg-red-500 text-white hover:bg-red-600"
+          >
+            Add sold item
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("tradein")}
+            className="px-3 py-2 text-sm font-medium rounded bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600"
+          >
+            Add trade-in
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPicked(null);
+            }}
+            placeholder={
+              mode === "sale"
+                ? "Search your active listings…"
+                : "Search the catalog…"
+            }
+            className="block w-full rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+            autoFocus
+          />
+          {searching && (
+            <p className="text-xs text-gray-400">Searching…</p>
+          )}
+
+          {!picked && mode === "sale" && listings.length > 0 && (
+            <ul className="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded">
+              {listings.map((l) => (
+                <li key={l.id}>
+                  <button
+                    type="button"
+                    onClick={() => pickListing(l)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    {l.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={l.image_url}
+                        alt={l.card_name ?? ""}
+                        className="w-10 h-14 object-contain rounded flex-shrink-0 bg-gray-50 dark:bg-gray-900"
+                      />
+                    ) : (
+                      <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {l.card_name ?? "—"}
+                        {l.card_number && (
+                          <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                            #{l.card_number}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {gradeLabel(l.grading_service, l.grade)} · qty {l.quantity} · {fmt(l.price_cents)}
+                      </p>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!picked && mode === "tradein" && catalog.length > 0 && (
+            <ul className="max-h-72 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700 border border-gray-200 dark:border-gray-700 rounded">
+              {catalog.map((c) => (
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => pickCatalog(c)}
+                    className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50"
+                  >
+                    {c.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.image_url}
+                        alt={c.name ?? ""}
+                        className="w-10 h-14 object-contain rounded flex-shrink-0 bg-gray-50 dark:bg-gray-900"
+                      />
+                    ) : (
+                      <div className="w-10 h-14 bg-gray-200 dark:bg-gray-600 rounded flex-shrink-0" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {c.name ?? "—"}
+                        {c.card_number && (
+                          <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                            #{c.card_number}
+                          </span>
+                        )}
+                      </p>
+                      {(c.set_name || c.language) && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                          {c.set_name}
+                          {c.language && (
+                            <span className="ml-1.5 inline-block px-1 py-0.5 text-[10px] uppercase tracking-wide font-medium rounded bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200">
+                              {c.language}
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {picked && (
+            <div className="mt-2 p-3 rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30">
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-3">
+                {picked.kind === "listing"
+                  ? picked.row.card_name
+                  : picked.row.name}
+                {(picked.kind === "listing"
+                  ? picked.row.card_number
+                  : picked.row.card_number) && (
+                  <span className="ml-1 text-xs font-normal text-gray-500 dark:text-gray-400">
+                    #
+                    {picked.kind === "listing"
+                      ? picked.row.card_number
+                      : picked.row.card_number}
+                  </span>
+                )}
+              </p>
+              <div className="flex flex-wrap items-end gap-3 text-sm">
+                {picked.kind === "catalog" && (
+                  <>
+                    <label className="block">
+                      <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        Grading
+                      </span>
+                      <select
+                        value={grading}
+                        onChange={(e) => setGrading(e.target.value)}
+                        className="rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1"
+                      >
+                        <option value="ungraded">Ungraded</option>
+                        <option value="psa">PSA</option>
+                        <option value="bgs">BGS</option>
+                        <option value="cgc">CGC</option>
+                        <option value="sgc">SGC</option>
+                        <option value="ace">ACE</option>
+                        <option value="ags">AGS</option>
+                        <option value="ars">ARS</option>
+                        <option value="tag">TAG</option>
+                      </select>
+                    </label>
+                    {grading !== "ungraded" && (
+                      <label className="block">
+                        <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          Grade
+                        </span>
+                        <input
+                          type="text"
+                          value={grade}
+                          onChange={(e) => setGrade(e.target.value)}
+                          placeholder="e.g. 10"
+                          className="w-20 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1"
+                        />
+                      </label>
+                    )}
+                  </>
+                )}
+                <label className="block">
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    Qty
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={qty}
+                    onChange={(e) => setQty(e.target.value)}
+                    className="w-20 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-right"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+                    {picked.kind === "listing"
+                      ? `Unit price (${currency})`
+                      : `Trade-in value (${currency})`}
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={unitPriceDollars}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v !== "" && !/^\d*\.?\d{0,2}$/.test(v)) return;
+                      setUnitPriceDollars(v);
+                    }}
+                    placeholder="0.00"
+                    className="w-28 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1 text-right tabular-nums"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={
+                    picked.kind === "listing"
+                      ? submitSaleLine
+                      : submitTradeinLine
+                  }
+                  disabled={submitting}
+                  className="px-3 py-1.5 text-sm font-medium text-white bg-red-500 rounded hover:bg-red-600 disabled:opacity-50"
+                >
+                  {submitting ? "Adding…" : "Add"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPicked(null)}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded hover:bg-gray-50 dark:hover:bg-gray-600"
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          )}
+
+          {err && (
+            <p className="text-xs text-red-600 dark:text-red-400">{err}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -767,6 +1426,7 @@ function ItemSection({
   slug,
   editPrices,
   onPriceChange,
+  onRemove,
 }: {
   label: string;
   tone: "out" | "in";
@@ -780,6 +1440,7 @@ function ItemSection({
   slug: string;
   editPrices: Record<string, string> | null;
   onPriceChange: (id: string, value: string) => void;
+  onRemove?: (item: Item) => void | Promise<void>;
 }) {
   const accent =
     tone === "out"
@@ -979,6 +1640,20 @@ function ItemSection({
                       {fmt(marginCents, txCurrency)}
                     </span>
                   </p>
+                )}
+                {onRemove && (
+                  <button
+                    type="button"
+                    onClick={() => onRemove(it)}
+                    className="mt-2 text-[11px] font-medium text-gray-500 hover:text-red-600 dark:hover:text-red-400"
+                    title={
+                      isInbound
+                        ? "Remove this line. The lot it created stays in inventory — delete manually if needed."
+                        : "Remove this line and return its inventory to stock."
+                    }
+                  >
+                    Remove
+                  </button>
                 )}
               </div>
             </li>

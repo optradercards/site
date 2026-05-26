@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { applyMultiWordIlike } from "@/lib/search";
 
 interface Stats {
   total: number;
@@ -82,10 +83,11 @@ export default function ProductsPage() {
       .range(page * pageSize, (page + 1) * pageSize - 1)
       .order("name");
 
-    if (search.trim()) {
-      const term = search.trim();
-      query = query.or(`name.ilike.%${term}%,card_number.ilike.%${term}%`);
-    }
+    query = applyMultiWordIlike(query, search, [
+      "name",
+      "card_number",
+      "language",
+    ]);
 
     const { data, error } = await query;
 

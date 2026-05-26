@@ -1113,6 +1113,7 @@ export default function ListingsPage() {
                         name={r.listing.card_name}
                         cardNumber={r.listing.card_number}
                         setName={r.listing.set_name}
+                        language={r.listing.language}
                       />
                     </td>
                     {/* Grade */}

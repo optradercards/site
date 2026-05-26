@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
@@ -33,6 +34,7 @@ type CollectionItem = {
   card_number: string | null;
   rarity: string | null;
   set_name: string;
+  language: string | null;
   brand_name: string;
   grading_service: string | null;
   grade: string | null;
@@ -298,7 +300,7 @@ export default function UnlistedPage() {
       .schema("ecom")
       .from("vendor_inventory_summary")
       .select(
-        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance, consignor_asking_price_cents, acquired_at"
+        "lot_id, card_product_id, quantity_remaining, product_name, image_url, card_number, rarity, set_name, language, brand_name, grading_service, grade, acquisition_cost_cents, acquisition_currency, consignor_acceptance, consignor_asking_price_cents, acquired_at"
       )
       .eq("account_id", activeAccountId)
       .gt("quantity_remaining", 0)
@@ -314,6 +316,7 @@ export default function UnlistedPage() {
       card_number: r.card_number,
       rarity: r.rarity,
       set_name: r.set_name,
+      language: r.language ?? null,
       brand_name: r.brand_name,
       grading_service: r.grading_service,
       grade: r.grade,
@@ -1389,7 +1392,16 @@ export default function UnlistedPage() {
                         name={r.item.product_name}
                         cardNumber={r.item.card_number}
                         setName={r.item.set_name}
+                        language={r.item.language}
                       />
+                      <Link
+                        href={`/${slug}/manage/inventory/${r.item.instance_id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 inline-block text-[11px] font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
+                        title="Open inventory lot"
+                      >
+                        Lot &rarr;
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-gray-600 dark:text-gray-400">
                       {gradeLabel(r.item.grading_service, r.item.grade)}

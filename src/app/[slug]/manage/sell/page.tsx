@@ -8,6 +8,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { useExchangeRates } from "@/hooks/useExchangeRates";
 import { gradeLabel, resolveMarketValue, type EcomListing, type MarketData } from "@/lib/pricing";
 import { formatPrice } from "@/lib/currency";
+import { applyMultiWordIlike } from "@/lib/search";
 import CustomerSearchModal from "./customer-search-modal";
 import InventoryPreviewModal from "./inventory-preview-modal";
 
@@ -144,10 +145,11 @@ export default function SellPage() {
         .eq("status", "active")
         .gt("quantity", 0)
         .limit(30);
-      if (invSearch.trim()) {
-        const term = invSearch.trim();
-        q = q.or(`card_name.ilike.%${term}%,card_number.ilike.%${term}%`);
-      }
+      q = applyMultiWordIlike(q, invSearch, [
+        "card_name",
+        "card_number",
+        "language",
+      ]);
       const { data } = await q;
       if (!cancelled) {
         setInvResults((data ?? []) as EcomListing[]);
@@ -173,17 +175,19 @@ export default function SellPage() {
         return;
       }
       setCatSearching(true);
-      const { data } = await supabase
-        .schema("cards")
-        .from("products_with_details")
-        .select(
-          "id, name, image_url, set_name, brand_name, card_number, rarity, " +
-            "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4, " +
-            "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9, " +
-            "price_psa_10, price_psa_9_5, price_bgs, price_cgc"
-        )
-        .or(`name.ilike.%${catSearch.trim()}%,card_number.ilike.%${catSearch.trim()}%`)
-        .limit(30);
+      const { data } = await applyMultiWordIlike(
+        supabase
+          .schema("cards")
+          .from("products_with_details")
+          .select(
+            "id, name, image_url, set_name, brand_name, card_number, rarity, " +
+              "price_ungraded, price_psa_1, price_psa_2, price_psa_3, price_psa_4, " +
+              "price_psa_5, price_psa_6, price_psa_7, price_psa_8, price_psa_9, " +
+              "price_psa_10, price_psa_9_5, price_bgs, price_cgc"
+          ),
+        catSearch,
+        ["name", "card_number", "language"],
+      ).limit(30);
       if (!cancelled) {
         setCatResults((data ?? []) as unknown as CatalogProduct[]);
         setCatSearching(false);
@@ -370,6 +374,17 @@ export default function SellPage() {
   const [inventoryModalOpen, setInventoryModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [payidRef, setPayidRef] = useState("");
+  // Sale date — datetime-local in the user's tz; defaults to now so most
+  // sales just go through with current timestamp, but the trader can
+  // backdate a ticket they're punching in late.
+  const [saleDateInput, setSaleDateInput] = useState<string>(() => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return (
+      `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+      `T${pad(now.getHours())}:${pad(now.getMinutes())}`
+    );
+  });
   const [completing, setCompleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -385,6 +400,18 @@ export default function SellPage() {
         buyerName || buyerEmail || buyerPhone
           ? { name: buyerName || null, email: buyerEmail || null, phone: buyerPhone || null }
           : null;
+
+      // Single source of truth for the ticket's effective date: completed_at,
+      // paid_at, and any trade-in lot's acquired_at all derive from this so
+      // a backdated ticket lands consistently. Falls back to "now" if the
+      // input was cleared.
+      const saleDateDateLocal = saleDateInput
+        ? new Date(saleDateInput)
+        : new Date();
+      const effectiveDate = Number.isFinite(saleDateDateLocal.getTime())
+        ? saleDateDateLocal
+        : new Date();
+      const effectiveDateIso = effectiveDate.toISOString();
 
       // Pure trade = no cash changes hands.
       const type = totals.net_cents === 0 ? "trade" : "order";
@@ -460,7 +487,7 @@ export default function SellPage() {
             currency,
             reference: paymentMethod === "payid_manual" ? payidRef || null : null,
             status: "received",
-            paid_at: new Date().toISOString(),
+            paid_at: effectiveDateIso,
           });
         if (payErr) throw payErr;
       }
@@ -487,8 +514,9 @@ export default function SellPage() {
       // 4b. Trade-in items land in inventory as new lots. Cost basis =
       //     market value × tradePct (we paid 75% of market for the trade).
       //     acquisition_source='trade_in' so reports can tell them from
-      //     purchased stock.
-      const today = new Date().toISOString().slice(0, 10);
+      //     purchased stock. acquired_at follows the sale date so a back-
+      //     dated ticket lands its trade-ins on the right day.
+      const today = effectiveDateIso.slice(0, 10);
       const inboundLots = items
         .filter((it) => it.direction === "in" && it.card_product_id)
         .map((it) => ({
@@ -514,11 +542,11 @@ export default function SellPage() {
         if (lotErr) throw lotErr;
       }
 
-      // 5. Mark transaction completed
+      // 5. Mark transaction completed at the effective ticket date.
       const { error: doneErr } = await supabase
         .schema("ecom")
         .from("transactions")
-        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .update({ status: "completed", completed_at: effectiveDateIso })
         .eq("id", tx.id);
       if (doneErr) throw doneErr;
 
@@ -532,6 +560,15 @@ export default function SellPage() {
       setInvSearchInput("");
       setCatSearchInput("");
       setTotalOverrideInput("");
+      // Reset sale date back to "now" for the next ticket.
+      {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        setSaleDateInput(
+          `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}` +
+            `T${pad(now.getHours())}:${pad(now.getMinutes())}`,
+        );
+      }
     } catch (e) {
       // Supabase errors come back as plain objects, not Error instances —
       // dig out the message + code so we can actually see what failed.
@@ -562,6 +599,7 @@ export default function SellPage() {
     items,
     payidRef,
     paymentMethod,
+    saleDateInput,
     supabase,
     totals.net_cents,
     tradePct,
@@ -944,6 +982,19 @@ export default function SellPage() {
                   )}
               </div>
             )}
+          </div>
+
+          {/* Sale date — defaults to now, lets the trader backdate */}
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              Sale date
+            </p>
+            <input
+              type="datetime-local"
+              value={saleDateInput}
+              onChange={(e) => setSaleDateInput(e.target.value)}
+              className="w-full px-2 py-1.5 text-sm rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+            />
           </div>
 
           {/* Payment */}

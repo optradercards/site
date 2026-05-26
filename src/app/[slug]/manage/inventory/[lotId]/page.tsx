@@ -75,7 +75,13 @@ type SaleAllocationRow = {
   acquisition_currency_snapshot: string | null;
   created_at: string;
   transaction_item_id: string;
-  transaction_items: { transaction_id: string } | null;
+  transaction_items: {
+    transaction_id: string;
+    transactions: {
+      completed_at: string | null;
+      created_at: string;
+    } | null;
+  } | null;
 };
 
 // Trade-in lots are created by /sell with notes like
@@ -193,7 +199,7 @@ export default function InventoryLotPage() {
         .from("sale_allocations")
         .select(
           "id, quantity, acquisition_cost_cents_snapshot, acquisition_currency_snapshot, created_at, transaction_item_id, " +
-            "transaction_items!inner ( transaction_id )",
+            "transaction_items!inner ( transaction_id, transactions!inner ( completed_at, created_at ) )",
         )
         .eq("lot_id", lotId)
         .order("created_at", { ascending: false }),
@@ -577,8 +583,15 @@ export default function InventoryLotPage() {
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                 {sales.map((s) => (
                   <tr key={s.id}>
-                    <td className="px-3 py-2 text-gray-700 dark:text-gray-200">
-                      {new Date(s.created_at).toLocaleString()}
+                    <td
+                      className="px-3 py-2 text-gray-700 dark:text-gray-200"
+                      title="Sale date (transactions.completed_at, falls back to created_at)"
+                    >
+                      {(() => {
+                        const tx = s.transaction_items?.transactions;
+                        const iso = tx?.completed_at ?? tx?.created_at ?? s.created_at;
+                        return new Date(iso).toLocaleString();
+                      })()}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-700 dark:text-gray-200 tabular-nums">
                       {s.quantity}
