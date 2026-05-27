@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAccounts } from "@/contexts/AccountContext";
 import CardCell from "@/components/CardCell";
@@ -115,9 +115,29 @@ function bucketKey(
   return `${p}|${service}|${grade ?? ""}`;
 }
 
+// Build the /manage/inventory deep-link for a stocktake bucket. Mirrors the
+// filter rules used by ecom.fetch_system_qty: ungraded ignores grade entirely;
+// any graded service pins grade (or grade IS NULL via the __null__ sentinel).
+function inventoryLinkForBucket(
+  slug: string,
+  cardProductId: string,
+  service: string,
+  grade: string | null,
+): string {
+  const params = new URLSearchParams();
+  params.set("card_product_id", cardProductId);
+  params.set("grading_service", service);
+  if (service !== "ungraded") {
+    params.set("grade", grade ?? "__null__");
+  }
+  return `/${slug}/manage/inventory?${params.toString()}`;
+}
+
 export default function StockTakeDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const slug = params?.slug as string;
   const stockTakeId = params?.id as string;
   const supabase = useMemo(() => createClient(), []);
@@ -748,6 +768,34 @@ export default function StockTakeDetailPage() {
     await loadData();
   };
 
+  // Delete the session. Draft/cancelled remove cleanly (stock_take_items
+  // cascades). Completed sessions: the row + items go away but
+  // stock_adjustments survive (FK on delete set null) — applied inventory
+  // changes are NOT reversed, only the session metadata is lost. Strong
+  // confirmation reflects that.
+  const [deleting, setDeleting] = useState(false);
+  const deleteSession = async () => {
+    if (!take) return;
+    const warning =
+      take.status === "completed"
+        ? "Delete this completed stock take? The inventory adjustments it applied will NOT be reversed — only the count session and its item breakdown are removed. This can't be undone."
+        : `Delete this ${take.status} stock take? Counts in this session will be lost. This can't be undone.`;
+    if (!confirm(warning)) return;
+    setDeleting(true);
+    setError(null);
+    const { error: dErr } = await supabase
+      .schema("ecom")
+      .from("stock_takes")
+      .delete()
+      .eq("id", stockTakeId);
+    setDeleting(false);
+    if (dErr) {
+      setError(dErr.message);
+      return;
+    }
+    router.push(`/${slug}/manage/admin/stock-takes`);
+  };
+
   // -------------------------------------------------------------------------
   // Save notes
   // -------------------------------------------------------------------------
@@ -776,9 +824,31 @@ export default function StockTakeDetailPage() {
   // -------------------------------------------------------------------------
   // Filter the items table: all / shortages (missing) / overages (found) /
   // matched (zero delta). Defaults to all; flips to shortages on completed
-  // sessions so "what went missing?" is one click away.
+  // sessions so "what went missing?" is one click away. Synced to ?view=…
+  // so reload + back/forward + sharing a URL preserves the active tab.
   type ItemFilter = "all" | "shortage" | "overage" | "matched" | "uncounted";
-  const [itemFilter, setItemFilter] = useState<ItemFilter>("all");
+  const ITEM_FILTERS: ItemFilter[] = [
+    "all",
+    "shortage",
+    "overage",
+    "matched",
+    "uncounted",
+  ];
+  const viewParam = searchParams?.get("view") ?? null;
+  const itemFilter: ItemFilter =
+    viewParam && (ITEM_FILTERS as string[]).includes(viewParam)
+      ? (viewParam as ItemFilter)
+      : "all";
+  const setItemFilter = useCallback(
+    (next: ItemFilter) => {
+      const sp = new URLSearchParams(searchParams?.toString() ?? "");
+      if (next === "all") sp.delete("view");
+      else sp.set("view", next);
+      const qs = sp.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
   const visibleItems = useMemo(() => {
     if (itemFilter === "all") return items;
     return items.filter((it) => {
@@ -869,25 +939,35 @@ export default function StockTakeDetailPage() {
             )}
           </p>
         </div>
-        {!isReadOnly && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={cancelSession}
-              className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={complete}
-              disabled={completing || items.length === 0}
-              className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 disabled:opacity-50"
-            >
-              {completing ? "Committing…" : "Complete stock take"}
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={deleteSession}
+            disabled={deleting}
+            className="px-3 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </button>
+          {!isReadOnly && (
+            <>
+              <button
+                type="button"
+                onClick={cancelSession}
+                className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={complete}
+                disabled={completing || items.length === 0}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600 disabled:opacity-50"
+              >
+                {completing ? "Committing…" : "Complete stock take"}
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Summary */}
@@ -1249,9 +1329,14 @@ export default function StockTakeDetailPage() {
                             language={b.language}
                           />
                           <Link
-                            href={`/${slug}/manage/inventory?card_product_id=${b.card_product_id}`}
-                            className="mt-1 inline-block text-[11px] font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
-                            title="View matching inventory lots"
+                            href={inventoryLinkForBucket(
+                              slug,
+                              b.card_product_id,
+                              b.grading_service,
+                              b.grade,
+                            )}
+                            className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded border border-gray-200 dark:border-gray-700 text-gray-600 hover:text-red-600 hover:border-red-300 dark:text-gray-300 dark:hover:border-red-700"
+                            title="Open inventory filtered to this bucket (card + grading + grade)"
                           >
                             Inventory &rarr;
                           </Link>
@@ -1332,9 +1417,14 @@ export default function StockTakeDetailPage() {
                         />
                         {it.card_product_id && (
                           <Link
-                            href={`/${slug}/manage/inventory?card_product_id=${it.card_product_id}`}
-                            className="mt-1 inline-block text-[11px] font-medium text-gray-500 hover:text-red-600 dark:text-gray-400"
-                            title="View matching inventory lots"
+                            href={inventoryLinkForBucket(
+                              slug,
+                              it.card_product_id,
+                              it.grading_service,
+                              it.grade,
+                            )}
+                            className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] font-medium rounded border border-gray-200 dark:border-gray-700 text-gray-600 hover:text-red-600 hover:border-red-300 dark:text-gray-300 dark:hover:border-red-700"
+                            title="Open inventory filtered to this bucket (card + grading + grade)"
                           >
                             Inventory &rarr;
                           </Link>

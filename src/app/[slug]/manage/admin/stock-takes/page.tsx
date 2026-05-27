@@ -157,6 +157,33 @@ export default function StockTakesListPage() {
     router.push(`/${slug}/manage/admin/stock-takes/${data.id}`);
   };
 
+  // Delete a session. Draft/cancelled go cleanly (stock_take_items cascades).
+  // Completed sessions: the row plus its items go away but the related
+  // stock_adjustments rows survive (FK on delete set null) — inventory
+  // numbers stay as they are, only the count session breakdown is lost.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deleteRow = async (r: StockTakeRow) => {
+    const when = relativeTime(r.started_at);
+    const warning =
+      r.status === "completed"
+        ? `Delete this completed stock take from ${when}? The inventory adjustments it applied will NOT be reversed — only the count session and its item breakdown are removed.`
+        : `Delete this ${r.status} stock take from ${when}? Counts in this session will be lost.`;
+    if (!confirm(warning)) return;
+    setDeletingId(r.id);
+    setError(null);
+    const { error: dErr } = await supabase
+      .schema("ecom")
+      .from("stock_takes")
+      .delete()
+      .eq("id", r.id);
+    setDeletingId(null);
+    if (dErr) {
+      setError(dErr.message);
+      return;
+    }
+    setRows((prev) => prev.filter((row) => row.id !== r.id));
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
@@ -250,13 +277,24 @@ export default function StockTakesListPage() {
                     <td className="px-4 py-3 text-gray-500 dark:text-gray-400 max-w-[200px] truncate">
                       {r.notes ?? "—"}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/${slug}/manage/admin/stock-takes/${r.id}`}
-                        className="text-sm font-medium text-red-500 hover:text-red-600"
-                      >
-                        {r.status === "draft" ? "Continue" : "View"} &rarr;
-                      </Link>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => deleteRow(r)}
+                          disabled={deletingId === r.id}
+                          className="text-xs text-gray-500 hover:text-red-600 disabled:opacity-50"
+                          title="Delete this stock take"
+                        >
+                          {deletingId === r.id ? "Deleting…" : "Delete"}
+                        </button>
+                        <Link
+                          href={`/${slug}/manage/admin/stock-takes/${r.id}`}
+                          className="text-sm font-medium text-red-500 hover:text-red-600"
+                        >
+                          {r.status === "draft" ? "Continue" : "View"} &rarr;
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

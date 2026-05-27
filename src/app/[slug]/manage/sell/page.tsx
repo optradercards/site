@@ -145,9 +145,14 @@ export default function SellPage() {
         .eq("status", "active")
         .gt("quantity", 0)
         .limit(30);
+      // Match the inventory page's client-side filter: include set_name so
+      // "monkey luffy seal" lands a card by its set fragment, not just the
+      // name. brand_name catches "pokemon"/"op"/etc. as set qualifiers.
       q = applyMultiWordIlike(q, invSearch, [
         "card_name",
         "card_number",
+        "set_name",
+        "brand_name",
         "language",
       ]);
       const { data } = await q;
@@ -186,7 +191,7 @@ export default function SellPage() {
               "price_psa_10, price_psa_9_5, price_bgs, price_cgc"
           ),
         catSearch,
-        ["name", "card_number", "language"],
+        ["name", "card_number", "set_name", "brand_name", "language"],
       ).limit(30);
       if (!cancelled) {
         setCatResults((data ?? []) as unknown as CatalogProduct[]);

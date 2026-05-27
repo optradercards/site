@@ -132,6 +132,13 @@ export default function InventoryPage() {
   const router = useRouter();
   const purchaseIdFilter = searchParams?.get("purchase_id") ?? null;
   const cardProductIdFilter = searchParams?.get("card_product_id") ?? null;
+  const gradingServiceFilter = searchParams?.get("grading_service") ?? null;
+  // grade=__null__ is the explicit "graded service with no grade" case so we
+  // can distinguish it from "grade param omitted". Stocktake links use it
+  // when grading is set but grade is empty.
+  const gradeFilterRaw = searchParams?.get("grade");
+  const gradeFilter =
+    gradeFilterRaw === "__null__" ? null : (gradeFilterRaw ?? undefined);
   const sourceParam = searchParams?.get("source") ?? null;
 
   const { data: profileData } = useProfile();
@@ -223,6 +230,21 @@ export default function InventoryPage() {
       query = query.eq("card_product_id", cardProductIdFilter);
     }
 
+    // Bucket filter (from stocktake deep-link): grading_service alone is
+    // enough for "ungraded" (the grade column is unused there); for any
+    // graded service we also pin the grade so the result matches the
+    // stocktake bucket exactly. grade=__null__ → IS NULL.
+    if (gradingServiceFilter) {
+      query = query.eq("grading_service", gradingServiceFilter);
+      if (gradingServiceFilter !== "ungraded") {
+        if (gradeFilter === null) {
+          query = query.is("grade", null);
+        } else if (gradeFilter !== undefined) {
+          query = query.eq("grade", gradeFilter);
+        }
+      }
+    }
+
     const { data: invData } = await query;
     const lots = (invData ?? []) as InventoryRow[];
     setRows(lots);
@@ -280,7 +302,14 @@ export default function InventoryPage() {
     setGroupLinks((linksRes.data ?? []) as GroupItemLink[]);
 
     setLoading(false);
-  }, [supabase, activeAccountId, purchaseIdFilter, cardProductIdFilter]);
+  }, [
+    supabase,
+    activeAccountId,
+    purchaseIdFilter,
+    cardProductIdFilter,
+    gradingServiceFilter,
+    gradeFilter,
+  ]);
 
   useEffect(() => {
     loadData();
@@ -447,6 +476,14 @@ export default function InventoryPage() {
               className="text-sm text-red-500 hover:text-red-600"
             >
               &larr; Clear purchase filter
+            </Link>
+          )}
+          {(cardProductIdFilter || gradingServiceFilter) && !purchaseIdFilter && (
+            <Link
+              href={`/${slug}/manage/inventory`}
+              className="text-sm text-red-500 hover:text-red-600"
+            >
+              &larr; Clear card filter
             </Link>
           )}
         </div>

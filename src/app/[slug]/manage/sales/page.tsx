@@ -365,8 +365,13 @@ export default function SalesPage() {
         // Search every line on the ticket (name + card number), not just
         // the first one — multi-item sales were missing matches when the
         // hit was on line 2+. Also fold in buyer + notes since those are
-        // the next-most-useful things to search for.
+        // the next-most-useful things to search for. Include the tx id so
+        // a pasted UUID (or 8-char prefix lifted from a lot ref / receipt)
+        // finds the ticket — normalizeForSearch strips the dashes so an
+        // 8-char prefix matches the same shape on the haystack side.
         const haystacks: (string | null | undefined)[] = [
+          r.tx.id,
+          r.tx.source_id,
           r.tx.notes,
           r.tx.buyer_contact?.name,
           r.tx.buyer_contact?.email,
@@ -526,7 +531,7 @@ export default function SalesPage() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Card name or number"
+              placeholder="Card, buyer, notes, or sale ID"
               className="w-full px-3 py-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:border-red-500 focus:ring-red-500"
             />
           </div>
