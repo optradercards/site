@@ -14,6 +14,7 @@ interface NavItem {
 
 const adminNavItems: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: "📊" },
+  { href: "/admin/sync", label: "Sync", icon: "🔄" },
   { href: "/admin/crons", label: "Crons", icon: "⏰" },
   {
     label: "General",
