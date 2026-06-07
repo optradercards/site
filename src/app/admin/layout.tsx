@@ -14,7 +14,6 @@ interface NavItem {
 
 const adminNavItems: NavItem[] = [
   { href: "/admin", label: "Dashboard", icon: "📊" },
-  { href: "/admin/jobs", label: "Jobs", icon: "⚡" },
   { href: "/admin/crons", label: "Crons", icon: "⏰" },
   {
     label: "General",
@@ -39,7 +38,6 @@ const adminNavItems: NavItem[] = [
     icon: "📦",
     children: [
       { href: "/admin/orders", label: "Orders", icon: "🛒" },
-      { href: "/admin/reconciliation", label: "Reconciliation", icon: "🔍" },
     ],
   },
   {
@@ -55,14 +53,8 @@ const adminNavItems: NavItem[] = [
     label: "External",
     icon: "📥",
     children: [
-      { href: "/admin/external/settings", label: "Settings", icon: "🔑" },
-      { href: "/admin/external/sync", label: "Sync", icon: "🔄" },
+      { href: "/admin/external/settings", label: "Shiny Auth", icon: "🔑" },
       { href: "/admin/external/exchange-rates", label: "Exchange Rates", icon: "💱" },
-      { href: "/admin/external/import-brands", label: "Import Brands", icon: "🏷️" },
-      { href: "/admin/external/import-products", label: "Import Products", icon: "💾" },
-      { href: "/admin/external/import-collections", label: "Import Collections", icon: "📦" },
-      { href: "/admin/external/import-accounts", label: "Import Accounts", icon: "👤" },
-      { href: "/admin/external/search-collectr", label: "Search Collectr", icon: "🔍" },
     ],
   },
   {
