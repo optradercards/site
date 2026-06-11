@@ -105,7 +105,7 @@ export default function LabelsPage() {
     setLoading(true);
 
     // Only labels for currently-listed (active) inventory. Drafts go
-    // through /manage/listings → bulk Activate before reaching here.
+    // through /manage/store → bulk Activate before reaching here.
     const { data } = await supabase
       .schema("ecom")
       .from("listing_details")

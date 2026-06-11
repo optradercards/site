@@ -121,11 +121,17 @@ function buildNavItems(isTrader: boolean): NavItem[] {
       label: "Store",
       icon: "🏪",
       children: [
-        { href: "/manage/unlisted", label: "List Items", icon: "🏷️" },
-        { href: "/manage/listings", label: "Listings", icon: "📋" },
+        { href: "/manage/store", label: "Store", icon: "📋" },
         { href: "/manage/sell", label: "Sell", icon: "💰" },
         { href: "/manage/sales", label: "Sales", icon: "📈" },
         { href: "/manage/labels", label: "Labels", icon: "🖨️" },
+      ],
+    });
+    items.push({
+      label: "Channels",
+      icon: "🌐",
+      children: [
+        { href: "/manage/marketplaces/ebay", label: "eBay", icon: "🛒" },
       ],
     });
     items.push({

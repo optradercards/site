@@ -103,7 +103,7 @@ function entityLinkHref(
 ): string | null {
   switch (entityType) {
     case "listing":
-      return `/${slug}/manage/listings`;
+      return `/${slug}/manage/store`;
     case "inventory_lot":
       return `/${slug}/manage/inventory/${entityId}`;
     case "consignment_intake":

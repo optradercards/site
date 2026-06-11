@@ -255,7 +255,7 @@ export default function ManageOverviewPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Link
-          href={`/${slug}/manage/unlisted`}
+          href={`/${slug}/manage/store`}
           className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 hover:shadow-lg transition-shadow"
         >
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
