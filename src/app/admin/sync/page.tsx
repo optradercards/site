@@ -117,6 +117,30 @@ function orderedStats(stats: Record<string, unknown> | null): Array<[string, unk
   return keys.map((k) => [k, stats[k]]);
 }
 
+interface BrandProgress {
+  name: string | null;
+  total: number;
+  found: number;
+  page: number;
+  complete: boolean;
+}
+
+// Per-brand crawl progress out of the checkpoint, sorted by name.
+function brandProgress(
+  checkpoint: Record<string, unknown> | null
+): Array<[string, BrandProgress]> {
+  const bp = checkpoint?.brand_progress;
+  if (!bp || typeof bp !== "object") return [];
+  return Object.entries(bp as Record<string, BrandProgress>).sort((a, b) =>
+    (a[1].name ?? a[0]).localeCompare(b[1].name ?? b[0])
+  );
+}
+
+function pct(found: number, total: number): number {
+  if (!total || total <= 0) return 0;
+  return Math.min(100, Math.round((found / total) * 100));
+}
+
 export default function AdminSyncPage() {
   const supabase = createClient();
   const [runs, setRuns] = useState<SyncRun[]>([]);
@@ -359,6 +383,53 @@ export default function AdminSyncPage() {
                               </div>
                             )}
 
+                            {/* Brand progress bars */}
+                            {brandProgress(r.checkpoint).length > 0 && (
+                              <div>
+                                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
+                                  Brand progress
+                                </div>
+                                <div className="space-y-2">
+                                  {brandProgress(r.checkpoint).map(([id, p]) => {
+                                    const known = p.total > 0;
+                                    const percent = pct(p.found, p.total);
+                                    return (
+                                      <div key={id}>
+                                        <div className="flex items-center justify-between text-xs mb-0.5">
+                                          <span className="font-medium text-gray-700 dark:text-gray-300">
+                                            {p.name ?? id}
+                                            {p.complete && (
+                                              <span className="ml-2 text-green-600 dark:text-green-400">
+                                                ✓ complete
+                                              </span>
+                                            )}
+                                          </span>
+                                          <span className="text-gray-500 dark:text-gray-400 font-mono">
+                                            {known
+                                              ? `${fmtNum(p.found)} / ${fmtNum(p.total)} (${percent}%)`
+                                              : `${fmtNum(p.found)} found`}{" "}
+                                            · p{p.page}
+                                          </span>
+                                        </div>
+                                        <div className="h-2 w-full rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                                          <div
+                                            className={`h-full rounded ${
+                                              p.complete
+                                                ? "bg-green-500"
+                                                : known
+                                                  ? "bg-sky-500"
+                                                  : "bg-sky-400 animate-pulse"
+                                            }`}
+                                            style={{ width: `${known ? percent : 100}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
                             {/* Stats grid */}
                             <div>
                               <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">
@@ -398,17 +469,23 @@ export default function AdminSyncPage() {
                                 </div>
                               )}
 
-                            {/* checkpoint */}
-                            {r.checkpoint && Object.keys(r.checkpoint).length > 0 && (
-                              <div>
-                                <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
-                                  Checkpoint
+                            {/* checkpoint (brand_progress is shown as bars above) */}
+                            {(() => {
+                              if (!r.checkpoint) return null;
+                              const rest: Record<string, unknown> = { ...r.checkpoint };
+                              delete rest.brand_progress;
+                              if (Object.keys(rest).length === 0) return null;
+                              return (
+                                <div>
+                                  <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-1">
+                                    Checkpoint
+                                  </div>
+                                  <pre className="text-xs font-mono whitespace-pre-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 max-h-48 overflow-y-auto">
+                                    {JSON.stringify(rest, null, 2)}
+                                  </pre>
                                 </div>
-                                <pre className="text-xs font-mono whitespace-pre-wrap bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2 max-h-48 overflow-y-auto">
-                                  {JSON.stringify(r.checkpoint, null, 2)}
-                                </pre>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {/* events timeline */}
                             <div>
