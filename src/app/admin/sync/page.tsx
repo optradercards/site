@@ -81,8 +81,6 @@ const STAT_ORDER = [
   "errors_total",
 ];
 
-const HEARTBEAT_STALE_MS = 60_000; // matches LEASE_STALE_MS in the container
-
 function fmtDuration(ms: number): string {
   if (ms < 1000) return `${Math.max(0, Math.round(ms))}ms`;
   const s = ms / 1000;
@@ -205,10 +203,6 @@ export default function AdminSyncPage() {
     }
   };
 
-  const latest = runs[0];
-  const heartbeatAge = latest ? Date.now() - new Date(latest.updated_at).getTime() : 0;
-  const latestStale = latest?.status === "running" && heartbeatAge > HEARTBEAT_STALE_MS;
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -249,52 +243,6 @@ export default function AdminSyncPage() {
               project&apos;s Exposed Schemas (Settings → API).
             </p>
           )}
-        </div>
-      )}
-
-      {/* Live status banner */}
-      {latest && (
-        <div
-          className={`rounded-lg border p-4 ${
-            latestStale
-              ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
-              : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
-          }`}
-        >
-          <div className="flex items-center gap-3 flex-wrap text-sm">
-            <span className="text-gray-500 dark:text-gray-400">Latest run</span>
-            {latest.scope && (
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono ${scopeStyle(latest.scope)}`}
-              >
-                {latest.scope}
-              </span>
-            )}
-            <span
-              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[latest.status] ?? ""}`}
-            >
-              {latest.status}
-            </span>
-            {latest.phase && (
-              <span className="text-gray-700 dark:text-gray-300">
-                phase <span className="font-mono">{latest.phase}</span>
-              </span>
-            )}
-            <span className="text-gray-500 dark:text-gray-400">
-              {runDuration(latest)} elapsed
-            </span>
-            {latest.status === "running" && (
-              <span className={latestStale ? "text-red-600 dark:text-red-400 font-medium" : "text-gray-500 dark:text-gray-400"}>
-                heartbeat {fmtDuration(heartbeatAge)} ago
-                {latestStale ? " — stale, machine may be dead" : ""}
-              </span>
-            )}
-            {latest.machine_id && (
-              <span className="text-xs text-gray-400 dark:text-gray-500 font-mono ml-auto">
-                {latest.machine_id}
-              </span>
-            )}
-          </div>
         </div>
       )}
 
