@@ -12,6 +12,7 @@ interface SyncRun {
   started_at: string;
   finished_at: string | null;
   status: "running" | "completed" | "interrupted" | "failed";
+  scope: string | null;
   phase: string | null;
   checkpoint: Record<string, unknown> | null;
   stats: Record<string, unknown> | null;
@@ -35,6 +36,22 @@ const STATUS_STYLES: Record<string, string> = {
   interrupted: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
   failed: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
+
+// One crawler container per scope (pokemon/mtg/onepiece/rest brand slices, the
+// weekly metadata crawler; "global" = legacy single-writer rows). Colour-coded
+// so you can scan which container a run belongs to at a glance.
+const SCOPE_STYLES: Record<string, string> = {
+  pokemon: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  mtg: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  onepiece: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
+  rest: "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-300",
+  metadata: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+  global: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300",
+};
+
+function scopeStyle(scope: string | null): string {
+  return (scope && SCOPE_STYLES[scope]) || "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300";
+}
 
 const EVENT_KIND_STYLES: Record<string, string> = {
   error: "text-red-600 dark:text-red-400",
@@ -134,7 +151,7 @@ export default function AdminSyncPage() {
       .schema("sync")
       .from("runs")
       .select(
-        "id, started_at, finished_at, status, phase, checkpoint, stats, error, machine_id, updated_at"
+        "id, started_at, finished_at, status, scope, phase, checkpoint, stats, error, machine_id, updated_at"
       )
       .order("started_at", { ascending: false })
       .limit(25);
@@ -174,8 +191,10 @@ export default function AdminSyncPage() {
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Sync</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            The shiny-sync container&apos;s catalog crawl runs (
-            <span className="font-mono text-xs">sync.runs</span>).
+            shiny-sync catalog crawl runs — one row per day per scope (
+            <span className="font-mono text-xs">pokemon / mtg / onepiece / rest</span>{" "}
+            brand crawlers + <span className="font-mono text-xs">metadata</span>), from{" "}
+            <span className="font-mono text-xs">sync.runs</span>.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -220,6 +239,13 @@ export default function AdminSyncPage() {
         >
           <div className="flex items-center gap-3 flex-wrap text-sm">
             <span className="text-gray-500 dark:text-gray-400">Latest run</span>
+            {latest.scope && (
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono ${scopeStyle(latest.scope)}`}
+              >
+                {latest.scope}
+              </span>
+            )}
             <span
               className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[latest.status] ?? ""}`}
             >
@@ -263,6 +289,7 @@ export default function AdminSyncPage() {
                 <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                   <th className="px-4 py-3 whitespace-nowrap">Started</th>
                   <th className="px-4 py-3 whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 whitespace-nowrap">Scope</th>
                   <th className="px-4 py-3 whitespace-nowrap">Phase</th>
                   <th className="px-4 py-3 whitespace-nowrap">Duration</th>
                   <th className="px-4 py-3 whitespace-nowrap">Products</th>
@@ -291,6 +318,13 @@ export default function AdminSyncPage() {
                             {r.status}
                           </span>
                         </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono ${scopeStyle(r.scope)}`}
+                          >
+                            {r.scope ?? "—"}
+                          </span>
+                        </td>
                         <td className="px-4 py-3 whitespace-nowrap font-mono text-xs">
                           {r.phase ?? "—"}
                         </td>
@@ -313,7 +347,7 @@ export default function AdminSyncPage() {
                       </tr>
                       {isOpen && (
                         <tr className="bg-gray-50 dark:bg-gray-900/40 border-b border-gray-100 dark:border-gray-700/50">
-                          <td colSpan={7} className="px-4 py-4 space-y-4">
+                          <td colSpan={8} className="px-4 py-4 space-y-4">
                             {r.error && (
                               <div>
                                 <div className="text-xs font-semibold text-red-500 uppercase mb-1">
