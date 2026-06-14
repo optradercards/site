@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import ContainerHealth from "./ContainerHealth";
 
 // Reads the shiny-sync container's run log (sync.runs / sync.run_events).
 // The container writes these; admins have RLS select. Requires "sync" in the
@@ -245,6 +246,8 @@ export default function AdminSyncPage() {
           )}
         </div>
       )}
+
+      <ContainerHealth />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
         {loading ? (
