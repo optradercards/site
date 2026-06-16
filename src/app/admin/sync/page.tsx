@@ -122,6 +122,10 @@ interface BrandProgress {
   found: number;
   page: number;
   complete: boolean;
+  // Per-set discovery: how many of the brand's sets are done. Older runs (brand
+  // paging) won't have these — fall back to the page cursor.
+  setCount?: number;
+  setsComplete?: number;
 }
 
 // Per-brand crawl progress out of the checkpoint, sorted by name.
@@ -359,7 +363,10 @@ export default function AdminSyncPage() {
                                             {known
                                               ? `${fmtNum(p.found)} / ${fmtNum(p.total)} (${percent}%)`
                                               : `${fmtNum(p.found)} found`}{" "}
-                                            · p{p.page}
+                                            ·{" "}
+                                            {typeof p.setCount === "number"
+                                              ? `${p.setsComplete ?? 0}/${p.setCount} sets`
+                                              : `p${p.page}`}
                                           </span>
                                         </div>
                                         <div className="h-2 w-full rounded bg-gray-200 dark:bg-gray-700 overflow-hidden">
