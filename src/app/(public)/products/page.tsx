@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { fetchExchangeRates, formatPrice } from "@/lib/currency";
+import { applyMultiWordIlike } from "@/lib/search";
 import ProductBadges from "@/components/ProductBadges";
 
 export const metadata: Metadata = {
@@ -122,9 +123,11 @@ export default async function ProductsPage({
     );
 
   if (q) {
-    query = query.or(
-      `name.ilike.%${q}%,card_number.ilike.%${q}%,set_name.ilike.%${q}%`
-    );
+    query = applyMultiWordIlike(query, q, [
+      "name",
+      "card_number",
+      "set_name",
+    ]);
   }
   if (brand) query = query.eq("brand_name", brand);
   if (setName) query = query.eq("set_name", setName);
