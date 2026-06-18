@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { fetchExchangeRates, formatPrice } from "@/lib/currency";
 import { gradeLabel } from "@/lib/pricing";
+import { applyMultiWordIlike } from "@/lib/search";
 import MarketplaceSearch from "@/components/MarketplaceSearch";
 import ProductBadges from "@/components/ProductBadges";
 import { fetchVendorUpcomingEvents, VendorEventsStrip } from "./vendor-events";
@@ -117,9 +118,12 @@ export default async function StorefrontPage({
     .eq("seller_slug", slug);
 
   if (q) {
-    query = query.or(
-      `title.ilike.%${q}%,card_name.ilike.%${q}%,card_number.ilike.%${q}%,set_name.ilike.%${q}%`
-    );
+    query = applyMultiWordIlike(query, q, [
+      "title",
+      "card_name",
+      "card_number",
+      "set_name",
+    ]);
   }
   if (brandsFilter.length > 0) query = query.in("brand_name", brandsFilter);
   if (setsFilter.length > 0) query = query.in("set_name", setsFilter);

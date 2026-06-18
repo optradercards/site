@@ -50,6 +50,12 @@ const FIELDS: Record<string, Field[]> = {
     { label: "rates", base: "exchange_rates_upserted", kind: "gauge" },
     { label: "last ok", base: "exchange_rates_last_success_unixtime", kind: "age" },
   ],
+  "price-fetch": [
+    { label: "files", base: "price_fetch_files_written_total", kind: "total" },
+    { label: "errors", base: "price_fetch_errors_total", kind: "gauge" },
+    { label: "last ok", base: "price_fetch_last_success_unixtime", kind: "age" },
+  ],
+  "price-load": [{ label: "up", base: "price_load_up", kind: "gauge" }],
 };
 const CONTAINER_ORDER = [
   "pokemon",
@@ -60,6 +66,8 @@ const CONTAINER_ORDER = [
   "loader",
   "image-fetch",
   "exchange-rates",
+  "price-fetch",
+  "price-load",
 ];
 const fieldsFor = (c: string): Field[] => FIELDS[c] ?? CRAWLER_FIELDS;
 
@@ -72,6 +80,8 @@ const CHIP: Record<string, string> = {
   loader: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
   "image-fetch": "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300",
   "exchange-rates": "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
+  "price-fetch": "bg-lime-100 text-lime-800 dark:bg-lime-900/30 dark:text-lime-300",
+  "price-load": "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-300",
 };
 
 // Read a metric by base name, ignoring the {labels} suffix the exporter adds.
